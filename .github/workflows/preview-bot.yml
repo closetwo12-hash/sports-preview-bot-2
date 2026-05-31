@@ -1,0 +1,177 @@
+name: Sports Daily Preview
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+    - cron: "0 5 * * 1-5"
+    - cron: "0 3 * * 6,0"
+    - cron: "0 11 * * *"
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "실행 대상"
+        required: true
+        default: "mlb"
+        type: choice
+        options: [morning, npb, epl, mlb, worldcup]
+
+jobs:
+
+  morning-briefing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event.schedule == '0 0 * * *' || github.event.inputs.target == 'morning'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install requests yfinance beautifulsoup4
+      - name: 모닝 브리핑
+        env:
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python mlb-telegram-bot/scripts/morning_briefing.py
+      - if: failure()
+        env:
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PYEOF'
+          import os, requests
+          requests.post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendMessage",
+            json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": "모닝브리핑 오류"})
+          PYEOF
+
+  npb-weekday:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.schedule == '0 5 * * 1-5' || github.event.inputs.target == 'npb'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install requests beautifulsoup4 lxml
+      - name: NPB 프리뷰 평일
+        env:
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python mlb-telegram-bot/scripts/npb_preview.py
+      - if: failure()
+        env:
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PYEOF'
+          import os, requests
+          requests.post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendMessage",
+            json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": "NPB 프리뷰 오류"})
+          PYEOF
+
+  npb-weekend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.schedule == '0 3 * * 6,0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install requests beautifulsoup4 lxml
+      - name: NPB 프리뷰 주말
+        env:
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python mlb-telegram-bot/scripts/npb_preview.py
+      - if: failure()
+        env:
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PYEOF'
+          import os, requests
+          requests.post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendMessage",
+            json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": "NPB 프리뷰 오류"})
+          PYEOF
+
+  epl-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.schedule == '0 11 * * *' || github.event.inputs.target == 'epl'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install requests beautifulsoup4
+      - name: EPL 프리뷰
+        env:
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FOOTBALL_API_KEY:  ${{ secrets.FOOTBALL_API_KEY }}
+        run: python mlb-telegram-bot/scripts/epl_preview.py
+      - if: failure()
+        env:
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PYEOF'
+          import os, requests
+          requests.post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendMessage",
+            json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": "EPL 프리뷰 오류"})
+          PYEOF
+
+  worldcup-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.schedule == '0 11 * * *' || github.event.inputs.target == 'worldcup'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install requests
+      - name: 월드컵 프리뷰
+        env:
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          FOOTBALL_API_KEY:  ${{ secrets.FOOTBALL_API_KEY }}
+        run: python mlb-telegram-bot/scripts/worldcup_preview.py
+      - if: failure()
+        env:
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PYEOF'
+          import os, requests
+          requests.post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendMessage",
+            json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": "월드컵 프리뷰 오류"})
+          PYEOF
+
+  mlb-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event.schedule == '0 12 * * *' || github.event.inputs.target == 'mlb'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install requests pillow beautifulsoup4
+      - name: MLB 프리뷰
+        env:
+          TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python mlb-telegram-bot/scripts/generate_preview.py
+      - if: failure()
+        env:
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PYEOF'
+          import os, requests
+          requests.post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendMessage",
+            json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": "MLB 프리뷰 오류"})
+          PYEOF
