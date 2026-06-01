@@ -7,6 +7,7 @@ on:
     - cron: "0 3 * * 6,0"
     - cron: "0 11 * * *"
     - cron: "0 12 * * *"
+    - cron: "0 * * * *"    # VIP 홍보 — 매시간 정각
   workflow_dispatch:
     inputs:
       target:
@@ -14,7 +15,7 @@ on:
         required: true
         default: "mlb"
         type: choice
-        options: [morning, npb, epl, mlb, worldcup]
+        options: [morning, npb, epl, mlb, worldcup, vip]
 
 jobs:
 
@@ -149,6 +150,21 @@ jobs:
           requests.post(f"https://api.telegram.org/bot{os.environ['TELEGRAM_TOKEN']}/sendMessage",
             json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": "월드컵 프리뷰 오류"})
           PYEOF
+
+  vip-promotion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: github.event.schedule == '0 * * * *' || github.event.inputs.target == 'vip'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install requests
+      - name: VIP 홍보 메시지
+        env:
+          TELEGRAM_TOKEN:   ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python mlb-telegram-bot/scripts/vip_promotion.py
 
   mlb-preview:
     runs-on: ubuntu-latest
