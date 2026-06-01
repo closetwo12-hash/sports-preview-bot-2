@@ -379,7 +379,7 @@ def main():
     send_msg(header)
     time.sleep(0.5)
     # 2부: Claude 해설 + 뉴스
-    send_long(briefing)
+    send_long(briefing + "\n\n📩 VIP 조합상담 문의는\n👉 @HC_VV77 클릭 후 문의")
     print("🎉 완료!")
 
 
