@@ -144,13 +144,18 @@ PITCHER_KR = {
 def pitcher_kr(name_jp: str) -> str:
     """일본어 선수명 → 한국어 독음. 없으면 원문 그대로."""
     name_jp = name_jp.strip()
+    # 공백 정규화
+    name_norm = re.sub(r"[　\s]+", " ", name_jp).strip()
+    if name_norm in PITCHER_KR:
+        return PITCHER_KR[name_norm]
     if name_jp in PITCHER_KR:
         return PITCHER_KR[name_jp]
     # 부분 매칭
     for k, v in PITCHER_KR.items():
-        if k in name_jp or name_jp in k:
+        k_norm = re.sub(r"[　\s]+", " ", k).strip()
+        if k_norm == name_norm or k in name_jp or name_jp in k:
             return v
-    return name_jp  # 변환 없으면 원문
+    return name_jp
 
 
 def venue_kr(s):
@@ -262,9 +267,9 @@ def make_card(g: dict, preview_text: str) -> bytes:
     draw.text((16+BOX_W//2, y+106), rank_h, font=f_sm, fill=TEXT2, anchor="mm")
     draw.line([36, y+120, 16+BOX_W-20, y+120], fill=DIVIDER, width=1)
     sp_h = f"선발: {g.get('home_pitcher','미정')}"
-    draw.text((36, y+138), sp_h, font=f_sm, fill=(*hc,), anchor="lm")
-    era_h = f"ERA {hp.get('era','-')}  WHIP {hp.get('whip','-')}"
-    draw.text((36, y+158), era_h, font=f_xs, fill=TEXT3, anchor="lm")
+    draw.text((36, y+134), sp_h, font=f_sm, fill=(*hc,), anchor="lm")
+    era_h = f"ERA {hp.get('era','-')}  WHIP {hp.get('whip','-')}  {hp.get('w','-')}승{hp.get('l','-')}패"
+    draw.text((36, y+152), era_h, font=f_xs, fill=TEXT3, anchor="lm")
 
     # 원정팀
     ax = W - 16 - BOX_W
@@ -279,9 +284,9 @@ def make_card(g: dict, preview_text: str) -> bytes:
     draw.text((ax+BOX_W//2, y+106), rank_a, font=f_sm, fill=TEXT2, anchor="mm")
     draw.line([ax+20, y+120, ax+BOX_W-20, y+120], fill=DIVIDER, width=1)
     sp_a = f"선발: {g.get('away_pitcher','미정')}"
-    draw.text((ax+20, y+138), sp_a, font=f_sm, fill=(*ac,), anchor="lm")
-    era_a = f"ERA {ap.get('era','-')}  WHIP {ap.get('whip','-')}"
-    draw.text((ax+20, y+158), era_a, font=f_xs, fill=TEXT3, anchor="lm")
+    draw.text((ax+20, y+134), sp_a, font=f_sm, fill=(*ac,), anchor="lm")
+    era_a = f"ERA {ap.get('era','-')}  WHIP {ap.get('whip','-')}  {ap.get('w','-')}승{ap.get('l','-')}패"
+    draw.text((ax+20, y+152), era_a, font=f_xs, fill=TEXT3, anchor="lm")
 
     # VS
     draw.text((W//2, y+90), "VS", font=f_med, fill=TEXT3, anchor="mm")
@@ -630,28 +635,29 @@ def fetch_all_team_stats():
     return stats
 
 def _get_monthly_soup():
-    """월간 일정 페이지 (경기 결과 링크 포함)"""
-    global _STARTER_SOUP  # 캐시 재활용
-    month = NOW_KST.strftime("%m")
-    urls = [
-        f"https://npb.jp/games/{SEASON}/schedule_{month}_detail.html",
-        f"https://npb.jp/games/{SEASON}/schedule_{int(month):02d}_detail.html",
-        f"https://npb.jp/announcement/starter/",
-    ]
-    for url in urls:
+    """월간 일정 페이지 (경기 결과 링크 포함) — 이전 달 포함 최대 2개월 조회"""
+    month     = int(NOW_KST.strftime("%m"))
+    prev_month = month - 1 if month > 1 else 12
+    months_to_try = [month, prev_month]
+
+    for m in months_to_try:
+        url = f"https://npb.jp/games/{SEASON}/schedule_{m:02d}_detail.html"
         try:
             r = SESS.get(url, timeout=12)
             if r.status_code != 200: continue
             html = r.content.decode("utf-8", errors="ignore")
             soup = BeautifulSoup(html, "html.parser")
-            # scores 링크가 있는 페이지 우선
-            score_links = soup.find_all("a", href=re.compile(rf"/scores/{SEASON}/\d{{4}}/"))
-            print(f"  월간일정: {url.split('/')[-1]} (scores링크 {len(score_links)}개)")
-            if score_links:
+            # 오늘 이전 날짜의 scores 링크만 카운트
+            past_links = [
+                a for a in soup.find_all("a", href=True)
+                if re.search(rf"/scores/{SEASON}/(\d{{4}})/", a["href"])
+                and re.search(rf"/scores/{SEASON}/(\d{{4}})/", a["href"]).group(1) < MMDD
+            ]
+            print(f"  월간일정: {url.split('/')[-1]} (이전결과 {len(past_links)}개)")
+            if past_links:
                 return soup
         except Exception as e:
-            print(f"  일정페이지 실패: {e}")
-    # fallback: starter 페이지
+            print(f"  일정페이지 실패({m:02d}): {e}")
     return _get_starter_soup()
 
 
@@ -824,8 +830,9 @@ def build_single_prompt(g: dict) -> str:
 홈({h}): {h_rank}
 원정({a}): {a_rank}
 전날({yd_date}): 홈={yd(g['h_yd'],h)} / 원정={yd(g['a_yd'],a)}
-선발: 홈 {g['home_pitcher']} ERA {g['hp']['era']} WHIP {g['hp']['whip']} K/9 {g['hp']['k9']}
-      원정 {g['away_pitcher']} ERA {g['ap']['era']} WHIP {g['ap']['whip']} K/9 {g['ap']['k9']}
+선발:
+  홈({h}) {g['home_pitcher']}: ERA {g['hp']['era']} WHIP {g['hp']['whip']} K/9 {g['hp']['k9']} BB/9 {g['hp']['bb9']} {g['hp']['w']}승{g['hp']['l']}패
+  원정({a}) {g['away_pitcher']}: ERA {g['ap']['era']} WHIP {g['ap']['whip']} K/9 {g['ap']['k9']} BB/9 {g['ap']['bb9']} {g['ap']['w']}승{g['ap']['l']}패
 불펜: 홈={g['hbull']['status']} / 원정={g['abull']['status']}
 최근5경기: 홈={g['hf']} / 원정={g['af']}"""
 
