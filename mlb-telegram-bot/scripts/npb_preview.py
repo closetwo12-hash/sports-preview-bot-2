@@ -221,27 +221,34 @@ def make_card(g: dict, preview_text: str) -> bytes:
     draw.text((W//2, y+90), "VS", font=f_med, fill=TEXT3, anchor="mm")
     y += BOX_H + 14
 
-    # ── 최근 5경기 폼 ─────────────────────────────
-    draw_rounded_rect(draw, [16, y, W-16, y+56], 10, BG2)
-    draw.text((36, y+16), "최근 5경기", font=f_xs, fill=TEXT3, anchor="lm")
+    # ── 최근 5경기 폼 (홈/원정 구분) ───────────────
+    draw_rounded_rect(draw, [16, y, W-16, y+86], 10, BG2)
+    draw.text((36, y+14), "최근 5경기", font=f_xs, fill=TEXT3, anchor="lm")
 
     def draw_form(text, start_x, start_y):
         icons = {"✅":"W","❌":"L","➖":"D"}
         colors = {"W": GREEN, "L": RED, "D": GRAY}
         x = start_x
         for ch in text.split():
-            label = icons.get(ch, ch)
+            label = icons.get(ch, ch[:1].upper() if ch else "-")
             color = colors.get(label, GRAY)
-            draw.rounded_rectangle([x, start_y-12, x+26, start_y+8], radius=4, fill=color)
-            draw.text((x+13, start_y-2), label, font=f_xs, fill=TEXT1, anchor="mm")
-            x += 30
+            draw.rounded_rectangle([x, start_y-10, x+24, start_y+8], radius=4, fill=color)
+            draw.text((x+12, start_y-1), label, font=f_xs, fill=TEXT1, anchor="mm")
+            x += 28
         return x
 
-    draw.text((36, y+38), home, font=f_xs, fill=TEXT2, anchor="lm")
-    draw_form(g.get("hf","-"), 120, y+38)
-    draw.text((W//2+10, y+38), away, font=f_xs, fill=TEXT2, anchor="lm")
-    draw_form(g.get("af","-"), W//2+80, y+38)
-    y += 70
+    # 홈팀 폼
+    draw.text((36, y+38), f"{home} 홈", font=f_xs, fill=TEXT2, anchor="lm")
+    draw_form(g.get("hf_home", g.get("hf","-")), 130, y+38)
+    draw.text((36, y+62), f"{home} 원정", font=f_xs, fill=TEXT3, anchor="lm")
+    draw_form(g.get("hf_away", "-"), 130, y+62)
+
+    # 원정팀 폼
+    draw.text((W//2+10, y+38), f"{away} 홈", font=f_xs, fill=TEXT2, anchor="lm")
+    draw_form(g.get("af_home", g.get("af","-")), W//2+100, y+38)
+    draw.text((W//2+10, y+62), f"{away} 원정", font=f_xs, fill=TEXT3, anchor="lm")
+    draw_form(g.get("af_away", "-"), W//2+100, y+62)
+    y += 100
 
     # ── 불펜 피로도 ───────────────────────────────
     draw_rounded_rect(draw, [16, y, W-16, y+64], 10, BG2)
@@ -607,38 +614,114 @@ def fetch_all_team_stats():
             print(f"  팀OPS({lc}) 실패: {e}")
     return stats
 
+def _get_monthly_soup():
+    """월간 일정 페이지 (경기 결과 링크 포함)"""
+    global _STARTER_SOUP  # 캐시 재활용
+    month = NOW_KST.strftime("%m")
+    urls = [
+        f"https://npb.jp/games/{SEASON}/schedule_{month}_detail.html",
+        f"https://npb.jp/games/{SEASON}/schedule_{int(month):02d}_detail.html",
+        f"https://npb.jp/announcement/starter/",
+    ]
+    for url in urls:
+        try:
+            r = SESS.get(url, timeout=12)
+            if r.status_code != 200: continue
+            soup = BeautifulSoup(r.text, "html.parser")
+            # scores 링크가 있는 페이지 우선
+            if re.search(rf"/scores/{SEASON}/\d{{4}}/", r.text):
+                print(f"  월간일정: {url.split('/')[-1]}")
+                return soup
+        except Exception as e:
+            print(f"  일정페이지 실패: {e}")
+    # fallback: starter 페이지
+    return _get_starter_soup()
+
+
 def fetch_recent_form(team):
-    soup = _get_starter_soup()
-    all_links = soup.find_all("a", href=True)
+    """팀의 최근 5경기 폼 — 홈/원정 구분"""
+    soup = _get_monthly_soup()
     score_pat = re.compile(rf"/scores/{SEASON}/(\d{{4}})/(\w+)-(\w+)-\d+/")
-    seen = set(); done = []
-    for a in all_links:
+    seen = set()
+    home_done = []
+    away_done = []
+
+    for a in soup.find_all("a", href=True):
         href = a["href"]
         if not href.startswith("http"): href = "https://npb.jp" + href
         m = score_pat.search(href)
         if not m: continue
         mmdd_link = m.group(1)
-        if mmdd_link == MMDD: continue
-        key = mmdd_link+m.group(2)+m.group(3)
+        if mmdd_link >= MMDD: continue  # 오늘 이후 제외
+        key = mmdd_link + m.group(2) + m.group(3)
         if key in seen: continue
         seen.add(key)
-        hkr = URL_CODE_KR.get(m.group(2),"")
-        akr = URL_CODE_KR.get(m.group(3),"")
+
+        hkr = URL_CODE_KR.get(m.group(2), "")
+        akr = URL_CODE_KR.get(m.group(3), "")
         if team not in (hkr, akr): continue
+
         text = a.get_text(separator=" ", strip=True)
-        sm = re.search(r"\b(\d+)-(\d+)\b", text)
+        sm = re.search(r"(\d+)-(\d+)", text)
         if not sm: continue
+
         hs = int(sm.group(1)); vs = int(sm.group(2))
         is_home = (team == hkr)
         opp = akr if is_home else hkr
-        my = hs if is_home else vs
-        op = vs if is_home else hs
-        if my>op: done.append(("✅",f"{opp} 승({my}:{op})"))
-        elif my<op: done.append(("❌",f"{opp} 패({my}:{op})"))
-        else: done.append(("➖",f"{opp} 무({my}:{op})"))
-        if len(done)>=5: break
-    last5 = done[:5]
-    return " ".join(x[0] for x in last5) or "-", [x[1] for x in last5]
+        my  = hs if is_home else vs
+        op  = vs if is_home else hs
+
+        if my > op:   icon = "✅"
+        elif my < op: icon = "❌"
+        else:         icon = "➖"
+
+        entry = (icon, f"{opp}({my}:{op})")
+        if is_home:
+            if len(home_done) < 5: home_done.append(entry)
+        else:
+            if len(away_done) < 5: away_done.append(entry)
+
+        if len(home_done) >= 5 and len(away_done) >= 5:
+            break
+
+    # 전체 최근 5경기 (홈/원정 합산)
+    all_done = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if not href.startswith("http"): href = "https://npb.jp" + href
+        m = score_pat.search(href)
+        if not m: continue
+        mmdd_link = m.group(1)
+        if mmdd_link >= MMDD: continue
+        hkr = URL_CODE_KR.get(m.group(2), "")
+        akr = URL_CODE_KR.get(m.group(3), "")
+        if team not in (hkr, akr): continue
+        text = a.get_text(separator=" ", strip=True)
+        sm = re.search(r"(\d+)-(\d+)", text)
+        if not sm: continue
+        hs = int(sm.group(1)); vs = int(sm.group(2))
+        is_home = (team == hkr)
+        my  = hs if is_home else vs
+        op  = vs if is_home else hs
+        if my > op:   icon = "✅"
+        elif my < op: icon = "❌"
+        else:         icon = "➖"
+        all_done.append(icon)
+        if len(all_done) >= 5: break
+
+    form_str = " ".join(all_done) if all_done else "-"
+
+    # 홈/원정 폼 문자열
+    h_form = " ".join(x[0] for x in home_done) if home_done else "-"
+    a_form = " ".join(x[0] for x in away_done) if away_done else "-"
+
+    return form_str, {
+        "home": h_form,
+        "away": a_form,
+        "home_detail": [x[1] for x in home_done],
+        "away_detail": [x[1] for x in away_done],
+    }
+
 
 def fetch_bullpen_fatigue(team):
     closer = CLOSER.get(team,"정보없음")
@@ -679,8 +762,14 @@ def enrich(games, yesterday):
         as_ = all_stats.get(a,{})
         hp  = fetch_pitcher_stat(g["home_pitcher"])
         ap  = fetch_pitcher_stat(g["away_pitcher"])
-        hf,hf_d = fetch_recent_form(h)
-        af,af_d = fetch_recent_form(a)
+        hf, hf_info = fetch_recent_form(h)
+        af, af_info = fetch_recent_form(a)
+        hf_d = hf_info.get("home_detail", []) + hf_info.get("away_detail", [])
+        af_d = af_info.get("home_detail", []) + af_info.get("away_detail", [])
+        hf_home = hf_info.get("home", "-")
+        hf_away = hf_info.get("away", "-")
+        af_home = af_info.get("home", "-")
+        af_away = af_info.get("away", "-")
         hbull = fetch_bullpen_fatigue(h)
         abull = fetch_bullpen_fatigue(a)
         h_yd = next((r for r in yesterday if r["home"]==h or r["away"]==h),None)
@@ -688,6 +777,8 @@ def enrich(games, yesterday):
         result.append({**g,
             "hs":hs,"as_":as_,"hp":hp,"ap":ap,
             "hf":hf,"hf_d":hf_d,"af":af,"af_d":af_d,
+            "hf_home":hf_home,"hf_away":hf_away,
+            "af_home":af_home,"af_away":af_away,
             "hbull":hbull,"abull":abull,
             "h_yd":h_yd,"a_yd":a_yd,
         })
