@@ -255,7 +255,10 @@ def make_card(g: dict, preview_text: str) -> bytes:
     draw.text((16+BOX_W//2, y+32), "홈", font=f_sm, fill=(*hc, 255), anchor="mm")
     draw.text((16+BOX_W//2, y+72), home, font=f_big, fill=TEXT1, anchor="mm")
     # 홈 스탯
-    rank_h = f"{hs.get('rank','-')}위 {hs.get('win','-')}승{hs.get('lose','-')}패"
+    h_draw = hs.get('draw','0')
+    rank_h = (f"{hs.get('rank','-')}위  "
+              f"{hs.get('win','-')}승 {hs.get('lose','-')}패"
+              + (f" {h_draw}무" if h_draw not in ('0','-','') else ""))
     draw.text((16+BOX_W//2, y+106), rank_h, font=f_sm, fill=TEXT2, anchor="mm")
     draw.line([36, y+120, 16+BOX_W-20, y+120], fill=DIVIDER, width=1)
     sp_h = f"선발: {g.get('home_pitcher','미정')}"
@@ -269,7 +272,10 @@ def make_card(g: dict, preview_text: str) -> bytes:
     draw.rectangle([ax, y, ax+BOX_W, y+5], fill=ac)
     draw.text((ax+BOX_W//2, y+32), "원정", font=f_sm, fill=(*ac,), anchor="mm")
     draw.text((ax+BOX_W//2, y+72), away, font=f_big, fill=TEXT1, anchor="mm")
-    rank_a = f"{as_.get('rank','-')}위 {as_.get('win','-')}승{as_.get('lose','-')}패"
+    a_draw = as_.get('draw','0')
+    rank_a = (f"{as_.get('rank','-')}위  "
+              f"{as_.get('win','-')}승 {as_.get('lose','-')}패"
+              + (f" {a_draw}무" if a_draw not in ('0','-','') else ""))
     draw.text((ax+BOX_W//2, y+106), rank_a, font=f_sm, fill=TEXT2, anchor="mm")
     draw.line([ax+20, y+120, ax+BOX_W-20, y+120], fill=DIVIDER, width=1)
     sp_a = f"선발: {g.get('away_pitcher','미정')}"
@@ -567,7 +573,7 @@ def fetch_all_team_stats():
     for lc,lg in [("c","CL"),("p","PL")]:
         try:
             r = SESS.get(f"https://npb.jp/bis/eng/{SEASON}/stats/std_{lc}.html", timeout=12)
-            soup = BeautifulSoup(r.text, "html.parser")
+            soup = BeautifulSoup(r.content.decode("utf-8","ignore"), "html.parser")
             for row in soup.select("table tbody tr"):
                 cols = row.select("td")
                 if len(cols)<6: continue
@@ -586,7 +592,7 @@ def fetch_all_team_stats():
     for lc in ["c","p"]:
         try:
             r = SESS.get(f"https://npb.jp/bis/eng/{SEASON}/stats/pit_{lc}.html", timeout=12)
-            soup = BeautifulSoup(r.text, "html.parser")
+            soup = BeautifulSoup(r.content.decode("utf-8","ignore"), "html.parser")
             bkt = {}
             for row in soup.select("table tbody tr"):
                 cols = row.select("td")
@@ -607,7 +613,7 @@ def fetch_all_team_stats():
     for lc in ["c","p"]:
         try:
             r = SESS.get(f"https://npb.jp/bis/eng/{SEASON}/stats/bat_{lc}.html", timeout=12)
-            soup = BeautifulSoup(r.text, "html.parser")
+            soup = BeautifulSoup(r.content.decode("utf-8","ignore"), "html.parser")
             ob = {}
             for row in soup.select("table tbody tr"):
                 cols = row.select("td")
