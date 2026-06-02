@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: pip install requests beautifulsoup4 lxml
+      - run: pip install requests beautifulsoup4 lxml pillow
       - name: NPB 프리뷰 평일
         env:
           TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
@@ -79,7 +79,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: pip install requests beautifulsoup4 lxml
+      - run: pip install requests beautifulsoup4 lxml pillow
       - name: NPB 프리뷰 주말
         env:
           TELEGRAM_TOKEN:    ${{ secrets.TELEGRAM_TOKEN }}
