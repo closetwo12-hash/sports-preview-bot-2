@@ -183,7 +183,7 @@ def make_card(g: dict, preview_text: str) -> bytes:
     # ── 헤더 ──────────────────────────────────────
     draw_rounded_rect(draw, [0,0,W,64], 0, BG2)
     draw.text((W//2, 20), "NPB 데일리 프리뷰", font=f_hdr, fill=TEXT2, anchor="mm")
-    date_str = f"{TODAY_KR}  ·  {g.get('time','-')} JST  ·  {g.get('venue','-')}"
+    date_str = f"{TODAY_KR}  {g.get('time','-')} JST  {g.get('venue','-')}"
     draw.text((W//2, 46), date_str, font=f_xs, fill=TEXT3, anchor="mm")
     y = 72
 
