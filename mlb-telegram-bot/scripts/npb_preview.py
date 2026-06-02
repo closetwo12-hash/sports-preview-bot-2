@@ -93,6 +93,66 @@ def jp_to_kr(s):
         if k in s: return v
     return s
 
+
+
+PITCHER_KR = {
+    # 요미우리
+    "則本 昂大": "노리모토 타카히로", "戸郷 翔征": "토고 쇼세이",
+    "菅野 智之": "스가노 토모유키", "山崎 伊織": "야마사키 이오리",
+    "グリフィン": "그리핀", "赤星 優志": "아카호시 유지",
+    # 한신
+    "西 勇輝": "니시 유키", "伊藤 将司": "이토 마사시",
+    "村上 頌樹": "무라카미 쇼키", "才木 浩人": "사이키 히로토",
+    "青柳 晃洋": "아오야기 코요", "髙橋 遥人": "타카하시 하루토",
+    # 오릭스
+    "九里 亜蓮": "쿠리 아렌", "山下 舜平大": "야마시타 슌페이타",
+    "宮城 大弥": "미야기 히로야", "田嶋 大樹": "타지마 타이키",
+    "東 晃平": "아즈마 코헤이",
+    # 소프트뱅크
+    "大津 亮介": "오츠 료스케", "有原 航平": "아리하라 코헤이",
+    "石川 柊太": "이시카와 슈타", "モイネロ": "모이넬로",
+    "松本 晴": "마츠모토 하루",
+    # 닛폰햄
+    "伊藤 大海": "이토 히로미", "上沢 直之": "우와사와 나오유키",
+    "加藤 貴之": "카토 타카유키", "金村 尚真": "카네무라 나오마사",
+    # 라쿠텐
+    "荘司 康誠": "쇼지 코세이", "岸 孝之": "기시 타카유키",
+    "瀧中 瞭太": "타키나카 료타", "早川 隆久": "하야카와 타카히사",
+    # DeNA
+    "平良 拳太郎": "타이라 켄타로", "東 克樹": "아즈마 카츠키",
+    "石田 裕太郎": "이시다 유타로", "ジャクソン": "잭슨",
+    "Ａ．ジャクソン": "A.잭슨",
+    # 야쿠르트
+    "松本 健吾": "마츠모토 켄고", "高橋 奎二": "타카하시 케이지",
+    "サイスニード": "사이스니드", "小川 泰弘": "오가와 야스히로",
+    # 주니치
+    "Ｋ．マラー": "K.말러", "マラー": "말러",
+    "髙橋 宏斗": "타카하시 히로토", "柳 裕也": "야나기 유야",
+    "小笠原 慎之介": "오가사와라 신노스케",
+    # 세이부
+    "平良 海馬": "타이라 카이마", "武内 夏暉": "타케우치 나츠키",
+    "今井 達也": "이마이 타츠야", "隅田 知一郎": "스미다 토모이치로",
+    # 롯데
+    "床田 寛樹": "토코다 히로키", "小島 和哉": "코지마 카즈야",
+    "種市 篤暉": "タネイチ 아츠키", "佐々木 朗希": "사사키 로키",
+    # 히로시마
+    "九里 亜蓮": "쿠리 아렌", "床田 寛樹": "토코다 히로키",
+    "森下 暢仁": "모리시타 미치토", "大瀬良 大地": "오세라 다이치",
+    "アドゥワ 誠": "아두와 마코토",
+}
+
+def pitcher_kr(name_jp: str) -> str:
+    """일본어 선수명 → 한국어 독음. 없으면 원문 그대로."""
+    name_jp = name_jp.strip()
+    if name_jp in PITCHER_KR:
+        return PITCHER_KR[name_jp]
+    # 부분 매칭
+    for k, v in PITCHER_KR.items():
+        if k in name_jp or name_jp in k:
+            return v
+    return name_jp  # 변환 없으면 원문
+
+
 def venue_kr(s):
     for k,v in VENUE_MAP.items():
         if k in s: return v
@@ -328,8 +388,9 @@ def _get_starter_soup():
         try:
             r = SESS.get(url, timeout=12)
             if r.status_code != 200: continue
-            soup = BeautifulSoup(r.text, "html.parser")
-            if MMDD in r.text or f"/scores/{SEASON}/{MMDD}/" in r.text:
+            html = r.content.decode("utf-8", errors="ignore")
+            soup = BeautifulSoup(html, "html.parser")
+            if MMDD in html or f"/scores/{SEASON}/{MMDD}/" in html:
                 print(f"  ✅ 소스: {url.split('/')[-1]}")
                 _STARTER_SOUP = soup
                 return soup
@@ -337,7 +398,8 @@ def _get_starter_soup():
             print(f"  ⚠️ {e}")
     try:
         r = SESS.get("https://npb.jp/announcement/starter/", timeout=12)
-        _STARTER_SOUP = BeautifulSoup(r.text, "html.parser")
+        html = r.content.decode("utf-8", errors="ignore")
+        _STARTER_SOUP = BeautifulSoup(html, "html.parser")
     except:
         _STARTER_SOUP = BeautifulSoup("", "html.parser")
     return _STARTER_SOUP
@@ -415,8 +477,9 @@ def _parse_starters(soup) -> dict:
             team_jp = nm.group(2).strip()
             team_kr = jp_to_kr(team_jp)
             if team_kr in TEAM_LEAGUE and name:
-                starters[team_kr] = name
-                print(f"    ✅ {team_kr}: {name}")
+                name_display = pitcher_kr(name)
+                starters[team_kr] = name_display
+                print(f"    ✅ {team_kr}: {name_display} ({name})")
             time.sleep(0.2)
         except Exception as e:
             print(f"    [{pid}] 오류: {e}")
@@ -573,10 +636,12 @@ def _get_monthly_soup():
         try:
             r = SESS.get(url, timeout=12)
             if r.status_code != 200: continue
-            soup = BeautifulSoup(r.text, "html.parser")
+            html = r.content.decode("utf-8", errors="ignore")
+            soup = BeautifulSoup(html, "html.parser")
             # scores 링크가 있는 페이지 우선
-            if re.search(rf"/scores/{SEASON}/\d{{4}}/", r.text):
-                print(f"  월간일정: {url.split('/')[-1]}")
+            score_links = soup.find_all("a", href=re.compile(rf"/scores/{SEASON}/\d{{4}}/"))
+            print(f"  월간일정: {url.split('/')[-1]} (scores링크 {len(score_links)}개)")
+            if score_links:
                 return soup
         except Exception as e:
             print(f"  일정페이지 실패: {e}")
