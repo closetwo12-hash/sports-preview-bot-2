@@ -405,9 +405,11 @@ def _parse_starters(soup) -> dict:
             if not title_m:
                 continue
             title = title_m.group(1).strip()
+            print(f"    [{pid}] title={title[:80]!r}")
             # 형식: "戸郷　翔征（読売ジャイアンツ） | 個人年度別成績"
             nm = re.match(r"^(.+?)[\uff08(](.+?)[\uff09)]", title)
             if not nm:
+                print(f"    [{pid}] 패턴 불일치: {title[:50]!r}")
                 continue
             name    = re.sub(r"[\u3000\s]+", " ", nm.group(1)).strip()
             team_jp = nm.group(2).strip()
