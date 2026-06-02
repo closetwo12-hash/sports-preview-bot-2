@@ -528,28 +528,47 @@ _PITCHER_CACHE = {}
 
 def _load_pitcher_cache():
     if _PITCHER_CACHE: return
+    # PITCHER_KR 역방향: 한국어 → 일본어
+    kr_to_jp = {v: k for k, v in PITCHER_KR.items()}
+
     for lc in ["c","p"]:
-        try:
-            r = SESS.get(f"https://npb.jp/bis/eng/{SEASON}/stats/pit_{lc}.html", timeout=12)
-            soup = BeautifulSoup(r.text, "html.parser")
-            for row in soup.select("table tbody tr"):
-                cols = row.select("td")
-                if len(cols) < 9: continue
-                name = cols[1].get_text(strip=True)
-                if not name: continue
-                ip_f = float(re.sub(r"[^\d.]","",cols[7].get_text()) or 0)
-                k_f  = float(re.sub(r"\D","",cols[11].get_text()) or 0) if len(cols)>11 else 0
-                bb_f = float(re.sub(r"\D","",cols[12].get_text()) or 0) if len(cols)>12 else 0
-                _PITCHER_CACHE[name] = {
-                    "w": cols[3].get_text(strip=True) if len(cols)>3 else "-",
-                    "l": cols[4].get_text(strip=True) if len(cols)>4 else "-",
-                    "era": cols[8].get_text(strip=True) if len(cols)>8 else "-",
-                    "whip": cols[9].get_text(strip=True) if len(cols)>9 else "-",
-                    "k9": f"{k_f/ip_f*9:.1f}" if ip_f>0 else "-",
-                    "bb9": f"{bb_f/ip_f*9:.1f}" if ip_f>0 else "-",
-                }
-        except Exception as e:
-            print(f"  투수캐시({lc}) 실패: {e}")
+        # 일본어 페이지에서 일본어 이름으로 캐시
+        for lang, url in [
+            ("jp", f"https://npb.jp/bis/{SEASON}/stats/pit_{lc}.html"),
+            ("en", f"https://npb.jp/bis/eng/{SEASON}/stats/pit_{lc}.html"),
+        ]:
+            try:
+                r = SESS.get(url, timeout=12)
+                if r.status_code != 200: continue
+                soup = BeautifulSoup(r.content.decode("utf-8","ignore"), "html.parser")
+                for row in soup.select("table tbody tr"):
+                    cols = row.select("td")
+                    if len(cols) < 9: continue
+                    name = cols[1].get_text(strip=True)
+                    if not name: continue
+                    try:
+                        ip_f = float(re.sub(r"[^\d.]","",cols[7].get_text()) or 0)
+                        k_f  = float(re.sub(r"\D","",cols[11].get_text()) or 0) if len(cols)>11 else 0
+                        bb_f = float(re.sub(r"\D","",cols[12].get_text()) or 0) if len(cols)>12 else 0
+                    except: ip_f = k_f = bb_f = 0
+                    stat = {
+                        "w":    cols[3].get_text(strip=True) if len(cols)>3 else "-",
+                        "l":    cols[4].get_text(strip=True) if len(cols)>4 else "-",
+                        "era":  cols[8].get_text(strip=True) if len(cols)>8 else "-",
+                        "whip": cols[9].get_text(strip=True) if len(cols)>9 else "-",
+                        "k9":   f"{k_f/ip_f*9:.1f}" if ip_f>0 else "-",
+                        "bb9":  f"{bb_f/ip_f*9:.1f}" if ip_f>0 else "-",
+                    }
+                    # 일본어 이름으로 저장
+                    name_norm = re.sub(r"[　\s]+"," ",name).strip()
+                    _PITCHER_CACHE[name_norm] = stat
+                    # 한국어 이름으로도 저장
+                    kr_name = PITCHER_KR.get(name_norm) or PITCHER_KR.get(name)
+                    if kr_name:
+                        _PITCHER_CACHE[kr_name] = stat
+                break  # 성공하면 다음 lang 시도 안 함
+            except Exception as e:
+                print(f"  투수캐시({lc}/{lang}) 실패: {e}")
 
 def fetch_pitcher_stat(name):
     empty = {"era":"-","whip":"-","k9":"-","bb9":"-","w":"-","l":"-"}
