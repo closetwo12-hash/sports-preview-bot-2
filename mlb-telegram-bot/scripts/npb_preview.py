@@ -374,110 +374,54 @@ def _extract_games_from_links(soup, mmdd):
         })
     return games
 
-def _parse_starters(soup):
+def _parse_starters(soup) -> dict:
     """
-    예고선발 파싱 - 3단계 방법:
-    1. /bis/players/ID.html 링크 → 선수 페이지 title 파싱
-    2. 선수 사진 img src URL 패턴에서 팀코드+선수ID 추출
-    3. 페이지 텍스트에서 직접 선수명 패턴 파싱
+    예고선발 테이블에서 팀별 선발투수 직접 파싱.
+    테이블 구조: 팀명 | 투수명 | 팀명 | 투수명 (같은 행)
     """
-    import re as _re
-
-    result = {}
-
-    # ── 방법 1: /bis/players/ID.html 링크 ──────────────
+    starters   = {}
     player_ids = []
+
+    # 선수 사진 링크에서 선수 ID 추출
     for a in soup.find_all("a", href=True):
-        m = _re.search(r"/bis/players/(\d+)\.html", a["href"])
-        if m:
-            pid = m.group(1)
-            if pid not in player_ids: player_ids.append(pid)
+        href = a["href"]
+        if "/bis/players/" in href and ".html" in href:
+            m = re.search(r"/bis/players/(\d+)\.html", href)
+            if m:
+                pid = m.group(1)
+                if pid not in player_ids:
+                    player_ids.append(pid)
 
     print(f"  예고선발 선수 ID {len(player_ids)}명")
 
-    for pid in player_ids[:24]:  # 최대 24명(12경기×2)
+    # 각 선수 페이지 title에서 이름+팀 파싱
+    for pid in player_ids:
         try:
-            r = SESS.get(f"https://npb.jp/bis/players/{pid}.html", timeout=8)
-            if r.status_code != 200: continue
-            title_m = _re.search(r"<title>([^<]+)</title>", r.text)
-            if not title_m: continue
+            r = SESS.get(f"https://npb.jp/bis/players/{pid}.html", timeout=10)
+            print(f"    [{pid}] {r.status_code}")
+            if r.status_code != 200:
+                continue
+            title_m = re.search(r"<title>([^<]+)</title>", r.text)
+            if not title_m:
+                continue
             title = title_m.group(1).strip()
-            nm = _re.match(r"^(.+?)[（(](.+?)[）)]", title)
-            if not nm: continue
-            name    = _re.sub(r"[　\s]+", " ", nm.group(1)).strip()
+            # 형식: "戸郷　翔征（読売ジャイアンツ） | 個人年度別成績"
+            nm = re.match(r"^(.+?)[\uff08(](.+?)[\uff09)]", title)
+            if not nm:
+                continue
+            name    = re.sub(r"[\u3000\s]+", " ", nm.group(1)).strip()
             team_jp = nm.group(2).strip()
             team_kr = jp_to_kr(team_jp)
             if team_kr in TEAM_LEAGUE and name:
-                result[team_kr] = name
-                print(f"    {team_kr}: {name}")
-            time.sleep(0.15)
+                starters[team_kr] = name
+                print(f"    ✅ {team_kr}: {name}")
+            time.sleep(0.2)
         except Exception as e:
-            print(f"  선수({pid}) 실패: {e}")
+            print(f"    [{pid}] 오류: {e}")
 
-    if result:
-        return result
-
-    # ── 방법 2: img src URL에서 팀코드+선수ID 추출 ──────
-    print("  방법2: img src 패턴 파싱...")
-    for img in soup.find_all("img", src=True):
-        src = img["src"]
-        # 패턴: /players_photo/2026/180/g/020_41045138.jpg
-        m = _re.search(r"/players_photo/\d+/\d+/(\w+)/\d+_(\d+)\.", src)
-        if not m: continue
-        team_code = m.group(1)
-        pid       = m.group(2)
-        team_kr   = URL_CODE_KR.get(team_code, "")
-        if not team_kr or team_kr in result: continue
-        try:
-            r = SESS.get(f"https://npb.jp/bis/players/{pid}.html", timeout=8)
-            if r.status_code != 200: continue
-            title_m = _re.search(r"<title>([^<]+)</title>", r.text)
-            if not title_m: continue
-            title = title_m.group(1).strip()
-            nm = _re.match(r"^(.+?)[（(](.+?)[）)]", title)
-            if nm:
-                name = _re.sub(r"[　\s]+", " ", nm.group(1)).strip()
-                if name:
-                    result[team_kr] = name
-                    print(f"    img방법 {team_kr}: {name}")
-            time.sleep(0.15)
-        except: pass
-
-    if result:
-        return result
-
-    # ── 방법 3: 페이지 텍스트에서 직접 선수명 파싱 ──────
-    print("  방법3: 텍스트 직접 파싱...")
-    page_text = soup.get_text(separator=" ")
-    # 한자 이름 패턴 (2~4글자 한자+공백+1~4글자 한자)
-    jp_name_pat = _re.compile(r"[一-鿿゠-ヿ]{1,4}[　\s][一-鿿゠-ヿ぀-ゟ]{1,5}")
-    for team_kr, team_venues in {
-        "요미우리": ["東京ドーム","巨人"],
-        "야쿠르트": ["神宮","ヤクルト"],
-        "DeNA":    ["横浜","ベイスターズ"],
-        "주니치":  ["バンテリン","ドラゴンズ"],
-        "한신":    ["甲子園","タイガース"],
-        "히로시마": ["マツダ","カープ"],
-        "소프트뱅크":["PayPay","ホークス"],
-        "닛폰햄":  ["エスコン","ファイターズ"],
-        "오릭스":  ["京セラ","バファローズ"],
-        "라쿠텐":  ["楽天モバイル","イーグルス"],
-        "세이부":  ["ベルーナ","ライオンズ"],
-        "롯데":    ["ZOZO","マリーンズ"],
-    }.items():
-        if team_kr in result: continue
-        for venue in team_venues:
-            idx = page_text.find(venue)
-            if idx < 0: continue
-            # 해당 구장 근처 텍스트에서 선수명 찾기
-            nearby = page_text[max(0,idx-100):idx+200]
-            names = jp_name_pat.findall(nearby)
-            if names:
-                result[team_kr] = names[0].strip()
-                print(f"    텍스트방법 {team_kr}: {names[0].strip()}")
-            break
-
-    return result
+    if not starters:
+        print("  ⚠️ 선발 수집 실패")
+    return starters
 
 
 def fetch_schedule():
