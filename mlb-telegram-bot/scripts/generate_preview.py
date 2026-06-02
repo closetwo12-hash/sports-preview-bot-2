@@ -9,7 +9,7 @@ MLB Daily Preview Generator — 칼럼니스트 스타일
   - 예상 승리팀 명시
 """
 
-import os
+import os, io, time
 import re, math, requests
 from datetime import datetime, timezone, timedelta
 from PIL import Image, ImageDraw, ImageFont
@@ -650,7 +650,10 @@ def build_prompt(games, enriched):
 ⚠️ 오늘의 변수: [경기 흐름을 뒤바꿀 핵심 변수]
 
 ══════════════════════════════
-🔒 본 최종 분석은 VIP에게만 공유됩니다."""
+🔒 본 최종 분석은 VIP에게만 공유됩니다.
+
+📩 VIP 조합상담 문의는
+👉 @HC_VV77 클릭 후 문의"""
 
 
 # ══════════════════════════════════════════════════════════════
@@ -674,228 +677,309 @@ def generate_preview_text(prompt):
 
 
 # ══════════════════════════════════════════════════════════════
-# 11. 이미지 카드 생성
+# 11. 이미지 카드 생성 (경기별 카드)
 # ══════════════════════════════════════════════════════════════
-    def fnt(bold=False, size=14):
-        for p in [
-            f"/usr/share/fonts/truetype/nanum/NanumGothic{'Bold' if bold else ''}.ttf",
-            f"/usr/share/fonts/truetype/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
-        ]:
-            try: return ImageFont.truetype(p, size)
-            except: pass
-        return ImageFont.load_default()
+FONT_PATHS = [
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+]
 
-    f_ttl = fnt(True, 22); f_dt = fnt(False, 14); f_tm = fnt(True, 15)
-    f_sub = fnt(False, 12); f_era = fnt(False, 11); f_ft = fnt(False, 10)
-    f_fav = fnt(True, 12)
+def get_font(size, bold=False):
+    paths = FONT_PATHS if bold else FONT_PATHS[1:]
+    for p in paths:
+        try: return ImageFont.truetype(p, size)
+        except: pass
+    return ImageFont.load_default()
 
-    d.rectangle([0, 0, W, HEAD_H], fill=HDR)
-    d.text((24, 12), "MLB Daily Preview", font=f_ttl, fill=WHITE)
-    d.text((24, 48), TODAY_KR + f"  |  총 {len(games)}경기", font=f_dt, fill=YELLOW)
-    d.text((24, 72), "전날 흐름 · 투수 컨디션 & 분할 스탯 · 불펜 가용성 · 타선 상성", font=f_ft, fill=GRAY)
+def draw_form_badges(draw, form_str, x, y):
+    icons = {"W": (34,197,94), "L": (239,68,68), "D": (71,85,105)}
+    label_map = {"✅":"W","❌":"L","➖":"D"}
+    for ch in form_str.split():
+        label = label_map.get(ch, ch[:1])
+        color = icons.get(label, (71,85,105))
+        draw.rounded_rectangle([x, y-11, x+24, y+7], radius=4, fill=color)
+        draw.text((x+12, y-2), label, font=get_font(11), fill=(255,255,255), anchor="mm")
+        x += 28
+    return x
 
-    fav_map = {}
-    for line in analysis_text.split("\n"):
-        if "예상:" in line or "우세" in line:
-            for g in games:
-                for side in [g["home"], g["away"]]:
-                    if side["name_kr"] in line:
-                        fav_map[g["gamePk"]] = side["name_kr"]
-                        break
+def make_mlb_card(g: dict, en: dict, preview_text: str) -> bytes:
+    W, H = 800, 880
+    BG   = (13, 21, 32);   BG2 = (22, 32, 48);   BG3 = (17, 27, 40)
+    T1   = (241,245,249);  T2  = (148,163,184);   T3  = (71,85,105)
+    DIV  = (30,45,65);     GRN = (34,197,94);     RED = (239,68,68)
+    GOLD = (250,204,21)
 
-    for i, g in enumerate(show):
-        y   = HEAD_H + i * ROW_H
-        col = ROW_A if i % 2 == 0 else ROW_B
-        d.rectangle([0, y, W, y + ROW_H], fill=col)
-        d.line([0, y, W, y], fill=DIVIDER, width=1)
+    img  = Image.new("RGB", (W, H), BG)
+    draw = ImageDraw.Draw(img)
 
-        pk  = g["gamePk"]
-        en  = enriched.get(pk, {})
-        hyl = en.get("h_yesterday")
-        ayl = en.get("a_yesterday")
-        hb  = en.get("home_bull", {})
-        ab  = en.get("away_bull", {})
+    f_big  = get_font(28, bold=True)
+    f_med  = get_font(20, bold=True)
+    f_base = get_font(17)
+    f_sm   = get_font(14)
+    f_xs   = get_font(12)
+    f_hdr  = get_font(13)
 
-        d.text((14, y + 8),  g["time_kst"], font=f_tm, fill=YELLOW)
-        d.text((14, y + 32), "KST",         font=f_ft, fill=GRAY)
+    home = g["home"]; away = g["away"]
+    hn = home["name_kr"]; an = away["name_kr"]
+    hp = home["pitcher"]; ap = away["pitcher"]
+    hs = en.get("home_stats",{}); as_ = en.get("away_stats",{})
+    hb = en.get("home_bull",{});  ab  = en.get("away_bull",{})
+    hyl= en.get("h_yesterday");   ayl = en.get("a_yesterday")
 
-        matchup = f"{g['away']['name_kr']}  @  {g['home']['name_kr']}"
-        d.text((90, y + 8), matchup, font=f_tm, fill=WHITE)
+    # ── 헤더
+    draw.rectangle([0,0,W,60], fill=BG2)
+    draw.text((W//2,20), "MLB 데일리 프리뷰", font=f_hdr, fill=T2, anchor="mm")
+    draw.text((W//2,44), f"{TODAY_KR}  ·  {g['time_kst']} KST  ·  {g.get('venue','-')}", font=f_xs, fill=T3, anchor="mm")
 
-        hp_nm = g["home"]["pitcher"]["name_kr"]
-        ap_nm = g["away"]["pitcher"]["name_kr"]
-        h_thr = "좌완" if g["home"]["pitcher"].get("throws") == "L" else "우완"
-        a_thr = "좌완" if g["away"]["pitcher"].get("throws") == "L" else "우완"
-        d.text((90, y + 32), f"{ap_nm}({a_thr}) vs {hp_nm}({h_thr})", font=f_sub, fill=GRAY)
+    y = 68
+    BOX_W = 358; BOX_H = 168
 
-        # 전날 결과
-        h_won = hyl and hyl["winner"] == g["home"]["name_kr"]
-        a_won = ayl and ayl["winner"] == g["away"]["name_kr"]
-        h_res = "승" if h_won else ("패" if hyl else "-")
-        a_res = "승" if a_won else ("패" if ayl else "-")
-        res_color = GREEN if h_won else (RED_C if hyl else GRAY)
-        d.text((90, y + 52), f"전날: 홈 {h_res} / 원정 {a_res}", font=f_era, fill=res_color)
+    # MLB 팀 컬러
+    MLB_COLOR = {
+        "LA 다저스":(0,90,156), "뉴욕 양키스":(12,35,64),
+        "휴스턴 애스트로스":(0,45,98), "애틀랜타 브레이브스":(206,17,65),
+        "보스턴 레드삭스":(189,48,57), "샌프란시스코 자이언츠":(253,90,30),
+        "뉴욕 메츠":(0,45,114), "필라델피아 필리스":(232,24,40),
+        "토론토 블루제이스":(19,74,142), "볼티모어 오리올스":(223,70,1),
+        "탬파베이 레이스":(9,44,92), "시카고 화이트삭스":(39,37,31),
+        "시카고 컵스":(14,51,134), "클리블랜드 가디언스":(0,56,93),
+        "디트로이트 타이거스":(12,35,64), "캔자스시티 로열스":(0,70,135),
+        "미네소타 트윈스":(211,17,69), "밀워키 브루어스":(18,40,75),
+        "세인트루이스 카디널스":(196,30,58), "신시내티 레즈":(198,1,31),
+        "피츠버그 파이리츠":(39,37,31), "콜로라도 로키스":(51,0,111),
+        "애리조나 다이아몬드백스":(167,25,48), "LA 에인절스":(186,0,33),
+        "시애틀 매리너스":(0,92,92), "텍사스 레인저스":(0,50,120),
+        "샌디에이고 파드리스":(47,36,29), "마이애미 말린스":(0,163,224),
+        "워싱턴 내셔널스":(171,0,3), "오클랜드 애슬레틱스":(0,56,49),
+    }
+    hc = MLB_COLOR.get(hn, (80,80,80))
+    ac = MLB_COLOR.get(an, (80,80,80))
 
-        # 마무리 소진 여부
-        h_closer_used = hb.get("closer_used", False)
-        a_closer_used = ab.get("closer_used", False)
-        closer_txt = "불펜: "
-        if h_closer_used and a_closer_used:
-            closer_txt += "양 팀 마무리 소진 🔴"
-        elif h_closer_used:
-            closer_txt += f"홈 마무리({hb.get('closer_name','?')}) 소진 🔴"
-        elif a_closer_used:
-            closer_txt += f"원정 마무리({ab.get('closer_name','?')}) 소진 🔴"
+    # 홈팀 박스
+    draw.rounded_rectangle([16,y,16+BOX_W,y+BOX_H], radius=12, fill=BG2)
+    draw.rectangle([16,y,16+BOX_W,y+5], fill=hc)
+    draw.text((16+BOX_W//2, y+30), "홈", font=f_sm, fill=(*hc,255)[:3], anchor="mm")
+    draw.text((16+BOX_W//2, y+68), hn, font=f_big, fill=T1, anchor="mm")
+    draw.line([36,y+90,16+BOX_W-20,y+90], fill=DIV, width=1)
+    h_rec = f"{hs.get('wins','-')}승 {hs.get('losses','-')}패  ERA {hs.get('era','-')}"
+    draw.text((16+BOX_W//2, y+108), h_rec, font=f_sm, fill=T2, anchor="mm")
+    h_sp = f"선발: {hp.get('name_kr','미정')} ({'좌완' if hp.get('throws')=='L' else '우완'})"
+    draw.text((36, y+134), h_sp, font=f_sm, fill=(*hc,), anchor="lm")
+    h_era = f"ERA {en.get('home_pitcher_adv',{}).get('era','-')}  WHIP {en.get('home_pitcher_adv',{}).get('whip','-')}"
+    draw.text((36, y+154), h_era, font=f_xs, fill=T3, anchor="lm")
+
+    # VS
+    draw.text((W//2, y+86), "VS", font=f_med, fill=T3, anchor="mm")
+
+    # 원정팀 박스
+    ax = W-16-BOX_W
+    draw.rounded_rectangle([ax,y,ax+BOX_W,y+BOX_H], radius=12, fill=BG2)
+    draw.rectangle([ax,y,ax+BOX_W,y+5], fill=ac)
+    draw.text((ax+BOX_W//2, y+30), "원정", font=f_sm, fill=(*ac,255)[:3], anchor="mm")
+    draw.text((ax+BOX_W//2, y+68), an, font=f_big, fill=T1, anchor="mm")
+    draw.line([ax+20,y+90,ax+BOX_W-20,y+90], fill=DIV, width=1)
+    a_rec = f"{as_.get('wins','-')}승 {as_.get('losses','-')}패  ERA {as_.get('era','-')}"
+    draw.text((ax+BOX_W//2, y+108), a_rec, font=f_sm, fill=T2, anchor="mm")
+    a_sp = f"선발: {ap.get('name_kr','미정')} ({'좌완' if ap.get('throws')=='L' else '우완'})"
+    draw.text((ax+20, y+134), a_sp, font=f_sm, fill=(*ac,), anchor="lm")
+    a_era = f"ERA {en.get('away_pitcher_adv',{}).get('era','-')}  WHIP {en.get('away_pitcher_adv',{}).get('whip','-')}"
+    draw.text((ax+20, y+154), a_era, font=f_xs, fill=T3, anchor="lm")
+
+    y += BOX_H + 12
+
+    # 불펜 피로도
+    draw.rounded_rectangle([16,y,W-16,y+60], radius=10, fill=BG2)
+    draw.text((36, y+14), "불펜 피로도", font=f_xs, fill=T3, anchor="lm")
+    h_closer = hb.get("closer_used",False)
+    a_closer = ab.get("closer_used",False)
+    hb_txt = f"{hn}: {'🔴 마무리 소진' if h_closer else '✅ 정상'}"
+    ab_txt = f"{an}: {'🔴 마무리 소진' if a_closer else '✅ 정상'}"
+    hb_col = RED if h_closer else GRN
+    ab_col = RED if a_closer else GRN
+    draw.text((36, y+42), hb_txt, font=f_sm, fill=hb_col, anchor="lm")
+    draw.text((W//2+10, y+42), ab_txt, font=f_sm, fill=ab_col, anchor="lm")
+
+    y += 74
+
+    # 전날 결과
+    draw.rounded_rectangle([16,y,W-16,y+46], radius=10, fill=BG2)
+    draw.text((36, y+14), "전날 결과", font=f_xs, fill=T3, anchor="lm")
+    h_yd_txt = f"{hn}: {hyl['summary'] if hyl else '경기없음'}"
+    a_yd_txt = f"{an}: {ayl['summary'] if ayl else '경기없음'}"
+    draw.text((36, y+34), h_yd_txt[:35], font=f_xs, fill=T2, anchor="lm")
+    draw.text((W//2+10, y+34), a_yd_txt[:35], font=f_xs, fill=T2, anchor="lm")
+
+    y += 60
+
+    # 프리뷰 분석
+    draw.rounded_rectangle([16,y,W-16,y+400], radius=12, fill=BG3)
+    draw.text((36, y+18), "프리뷰 분석", font=f_xs, fill=T3, anchor="lm")
+    draw.line([36,y+30,W-36,y+30], fill=DIV, width=1)
+
+    ty = y + 46
+    for line in preview_text.split("\n"):
+        if not line.strip(): ty += 8; continue
+        if "오늘의 예상" in line or "우세" in line:
+            draw.text((36, ty), line.strip()[:55], font=f_base, fill=GOLD, anchor="lm")
+            ty += 28
         else:
-            closer_txt += "양 팀 마무리 정상 ✅"
-        bull_color = RED_C if (h_closer_used or a_closer_used) else GREEN
-        d.text((90, y + 68), closer_txt, font=f_era, fill=bull_color)
+            # 줄바꿈
+            chars = line.strip(); cur = ""; wrapped = []
+            for ch in chars:
+                test = cur+ch
+                bb = draw.textbbox((0,0), test, font=f_base)
+                if bb[2] > W-72 and cur:
+                    wrapped.append(cur); cur = ch
+                else: cur = test
+            if cur: wrapped.append(cur)
+            for wl in wrapped:
+                if ty > y+385: break
+                draw.text((36, ty), wl, font=f_base, fill=T1, anchor="lm")
+                ty += 25
+        if ty > y+385: break
 
-        fav = fav_map.get(pk, "")
-        if fav:
-            bx1, by1, bx2, by2 = W - 190, y + 12, W - 10, y + 42
-            d.rectangle([bx1, by1, bx2, by2], fill=(30, 58, 100), outline=GOLD, width=1)
-            d.text((bx1 + 8, by1 + 7), f"🏆 {fav}", font=f_fav, fill=GOLD)
+    y += 412
 
-    if len(games) > 8:
-        y = HEAD_H + 8 * ROW_H
-        d.rectangle([0, y, W, y + ROW_H], fill=ROW_A)
-        d.line([0, y, W, y], fill=DIVIDER, width=1)
-        d.text((W // 2 - 60, y + 30), f"+ {len(games) - 8}경기 더 있음", font=f_sub, fill=GRAY)
-
-    fy = H - FOOT_H
-    d.rectangle([0, fy, W, H], fill=(10, 15, 30))
-    d.line([0, fy, W, fy], fill=DIVIDER, width=1)
-    d.text((24, fy + 14), "MLB Stats API + Claude AI 칼럼 분석  |  참고용 자료", font=f_ft, fill=GRAY)
+    # VIP
+    draw.rounded_rectangle([16,y,W-16,y+46], radius=10, fill=BG2)
+    draw.text((W//2, y+14), "🔒 VIP 전용 분석", font=f_xs, fill=T3, anchor="mm")
+    draw.text((W//2, y+34), "📩 문의: @HC_VV77", font=f_sm, fill=T2, anchor="mm")
 
     buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    img.save(buf, format="JPEG", quality=92)
     buf.seek(0)
-    return buf
+    return buf.getvalue()
+
+
+def send_media_group(image_bytes_list: list):
+    import json
+    if not image_bytes_list: return
+    for batch_start in range(0, len(image_bytes_list), 10):
+        batch = image_bytes_list[batch_start:batch_start+10]
+        files = {}; media = []
+        for i, img_bytes in enumerate(batch):
+            fname = f"photo{i}"
+            files[fname] = (f"{fname}.jpg", img_bytes, "image/jpeg")
+            media.append({"type":"photo","media":f"attach://{fname}"})
+        try:
+            r = requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMediaGroup",
+                data={"chat_id": TELEGRAM_CHAT_ID, "media": json.dumps(media)},
+                files=files, timeout=60)
+            if r.status_code==200: print(f"✅ 묶음 발송 완료 ({len(batch)}장)")
+            else: print(f"⚠️ 발송 실패: {r.text[:200]}")
+        except Exception as e:
+            print(f"⚠️ 발송 오류: {e}")
+        time.sleep(1)
+
+
+def call_claude_single(prompt: str) -> str:
+    try:
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":ANTHROPIC_API_KEY,
+                     "anthropic-version":"2023-06-01",
+                     "content-type":"application/json"},
+            json={"model":"claude-sonnet-4-6","max_tokens":800,
+                  "messages":[{"role":"user","content":prompt}]},
+            timeout=90)
+        if r.status_code!=200: return "분석 생성 실패"
+        return r.json()["content"][0]["text"]
+    except Exception as e:
+        print(f"  Claude 오류: {e}")
+        return "분석 생성 실패"
+
+
+def build_single_prompt_mlb(g: dict, en: dict) -> str:
+    hn = g["home"]["name_kr"]; an = g["away"]["name_kr"]
+    hs = en.get("home_stats",{}); as_ = en.get("away_stats",{})
+    hp = en.get("home_pitcher_adv",{}); ap = en.get("away_pitcher_adv",{})
+    hb = en.get("home_bull",{}); ab = en.get("away_bull",{})
+    hyl = en.get("h_yesterday"); ayl = en.get("a_yesterday")
+    h_throw = "좌완" if g["home"]["pitcher"].get("throws")=="L" else "우완"
+    a_throw = "좌완" if g["away"]["pitcher"].get("throws")=="L" else "우완"
+
+    return f"""MLB 칼럼니스트로서 아래 경기 프리뷰를 300자 내외로 작성하세요.
+마지막 줄은 반드시 "오늘의 예상: {{팀명}} 우세" 형식으로 끝내세요.
+마크다운 기호 금지. 수치 나열 금지. 스토리텔링 우선.
+확인되지 않은 선수명 언급 금지.
+
+경기: {an} @ {hn} | {g["time_kst"]} KST
+홈({hn}): {hs.get("wins","-")}승 {hs.get("losses","-")}패 ERA {hs.get("era","-")} OPS {hs.get("ops","-")}
+원정({an}): {as_.get("wins","-")}승 {as_.get("losses","-")}패 ERA {as_.get("era","-")} OPS {as_.get("ops","-")}
+전날: 홈={hyl["summary"] if hyl else "경기없음"} / 원정={ayl["summary"] if ayl else "경기없음"}
+홈 선발: {g["home"]["pitcher"].get("name_kr","미정")}({h_throw}) ERA {hp.get("era","-")} FIP {hp.get("fip","-")} WHIP {hp.get("whip","-")}
+원정 선발: {g["away"]["pitcher"].get("name_kr","미정")}({a_throw}) ERA {ap.get("era","-")} FIP {ap.get("fip","-")} WHIP {ap.get("whip","-")}
+불펜: 홈 마무리={'소진🔴' if hb.get("closer_used") else '정상✅'} / 원정 마무리={'소진🔴' if ab.get("closer_used") else '정상✅'}"""
 
 
 # ══════════════════════════════════════════════════════════════
-# 12. 텔레그램 발송
+# 12. 텔레그램 — 텍스트 메시지 (헤더용)
 # ══════════════════════════════════════════════════════════════
-def send_message(text):
-    # 텍스트 길이 제한 (텔레그램 최대 4096자)
-    if len(text) > 4096:
-        text = text[:4090] + "..."
+def send_message(text: str):
+    if len(text) > 4096: text = text[:4090] + "..."
     try:
         r = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": text},
-            timeout=15)
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=15)
         if r.status_code != 200:
-            print(f"  ⚠️ 텔레그램 오류 {r.status_code}: {r.text[:200]}")
-            # 특수문자 제거 후 재시도
             safe = re.sub(r"[<>&]", "", text)
-            requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                json={"chat_id": TELEGRAM_CHAT_ID, "text": safe},
-                timeout=15)
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                json={"chat_id": TELEGRAM_CHAT_ID, "text": safe}, timeout=15)
     except Exception as e:
         print(f"  ⚠️ 발송 실패: {e}")
 
 
-def clean_text(text):
-    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
-    text = re.sub(r"\*(.+?)\*", r"\1", text)
-    text = re.sub(r"__(.+?)__", r"\1", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    text = re.sub(r"\n([⚾📋🔬👤🏥🏆⭐🎯📊⚠️══])", r"\n\n\1", text)
-    return text.strip()
-
-
-def send_long_text(text):
-    text = clean_text(text)
-    MAX  = 3800
-    if len(text) <= MAX:
-        send_message(text); print("✅ 분석 발송 완료"); return
-    parts = text.split("──────────────────────")
-    chunk = ""; n = 1
-    for p in parts:
-        p = p.strip()
-        if not p: continue
-        cand = chunk + "\n──────────────────────\n" + p if chunk else p
-        if len(cand) > MAX:
-            if chunk: send_message(chunk); print(f"✅ 분석 {n}번 발송"); n += 1
-            chunk = p
-        else:
-            chunk = cand
-    if chunk: send_message(chunk); print(f"✅ 분석 {n}번 발송")
-
-
 # ══════════════════════════════════════════════════════════════
-# 13. 메인
+# 13. 메인 — 이미지 카드 묶음 발송
 # ══════════════════════════════════════════════════════════════
 def main():
-    print(f"[{TODAY_KR}] MLB 칼럼 스타일 프리뷰 생성 시작...")
+    print(f"[{TODAY_KR}] MLB 프리뷰 시작...")
 
     print("📡 전날 경기 결과 수집...")
     yesterday_results = fetch_yesterday_results()
-    print(f"  → {len(yesterday_results)}경기 결과 수집")
+    print(f"  → {len(yesterday_results)}경기")
 
-    print("📡 오늘 경기 일정 수집...")
+    print("📡 오늘 경기 수집...")
     games = fetch_todays_games()
     if not games:
-        send_message(
-            f"⚾ MLB 데일리 프리뷰\n"
-            f"📅 {TODAY_KR}\n\n"
-            f"오늘은 MLB 경기가 없습니다. 🌙"
-        )
+        print("오늘 MLB 경기 없음")
         return
 
     print(f"  → {len(games)}경기")
-
-    print("📊 팀/투수/불펜/부상자 데이터 수집...")
+    print("📊 데이터 수집...")
     enriched = enrich_games(games, yesterday_results)
 
-    print("🤖 Claude AI 칼럼 생성...")
-    header = (
+    # 헤더 메시지 먼저 발송
+    send_message(
         f"⚾ MLB 데일리 프리뷰\n"
-        f"📅 {TODAY_KR} (한국 시간 기준)\n"
-        f"🕐 발송 시각: {NOW_KR}\n"
-        f"{'─' * 28}\n\n"
+        f"📅 {TODAY_KR}\n🕐 {NOW_KR}\n"
+        f"총 {len(games)}경기 분석"
     )
+    time.sleep(0.5)
 
-    # 경기를 5경기씩 나눠서 생성 즉시 발송 (타임아웃 방지)
-    import math
-    BATCH  = 5
-    total  = len(games)
-    n_batch = math.ceil(total / BATCH)
-    print(f"  → {total}경기를 {n_batch}개 배치로 분할 처리")
+    # 경기별 이미지 카드 생성
+    print("🎨 이미지 카드 생성...")
+    image_list = []
+    for i, g in enumerate(games, 1):
+        pk  = g["gamePk"]
+        en  = enriched.get(pk, {})
+        hn  = g["home"]["name_kr"]
+        an  = g["away"]["name_kr"]
+        print(f"  {i}/{len(games)} {an} @ {hn} 분석 생성...")
 
-    sent_any = False
-    for i in range(n_batch):
-        batch_games = games[i*BATCH:(i+1)*BATCH]
-        print(f"  📝 배치 {i+1}/{n_batch} ({len(batch_games)}경기) Claude 생성...")
+        prompt  = build_single_prompt_mlb(g, en)
+        preview = call_claude_single(prompt)
+        img_bytes = make_mlb_card(g, en, preview)
+        image_list.append(img_bytes)
+        print(f"  ✅ 카드 생성")
+        time.sleep(1)
 
-        # 재시도 2회
-        part = None
-        for attempt in range(2):
-            try:
-                prompt = build_prompt(batch_games, enriched)
-                part   = generate_preview_text(prompt)
-                break
-            except Exception as e:
-                print(f"  ⚠️ 배치 {i+1} 시도 {attempt+1} 실패: {e}")
-                if attempt == 0:
-                    import time; time.sleep(5)
-
-        if not part:
-            print(f"  ⚠️ 배치 {i+1} 최종 실패 — 건너뜀")
-            continue
-
-        # 첫 배치만 헤더 포함, 나머지는 본문만
-        payload = (header + part) if i == 0 else part
-        print(f"  📨 배치 {i+1} 발송...")
-        send_long_text(payload)
-        sent_any = True
-        import time; time.sleep(2)  # 텔레그램 rate limit 방지
-
-    if not sent_any:
-        send_message("MLB 프리뷰 생성에 실패했습니다.")
+    # 묶음 발송
+    print("📨 이미지 묶음 발송...")
+    send_media_group(image_list)
     print("🎉 완료!")
 
 
