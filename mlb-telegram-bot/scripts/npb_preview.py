@@ -401,15 +401,15 @@ def _parse_starters(soup) -> dict:
             print(f"    [{pid}] {r.status_code}")
             if r.status_code != 200:
                 continue
-            title_m = re.search(r"<title>([^<]+)</title>", r.text)
+            # 인코딩 명시적으로 UTF-8 지정
+            html = r.content.decode("utf-8", errors="ignore")
+            title_m = re.search(r"<title>([^<]+)</title>", html)
             if not title_m:
                 continue
             title = title_m.group(1).strip()
-            print(f"    [{pid}] title={title[:80]!r}")
             # 형식: "戸郷　翔征（読売ジャイアンツ） | 個人年度別成績"
             nm = re.match(r"^(.+?)[\uff08(](.+?)[\uff09)]", title)
             if not nm:
-                print(f"    [{pid}] 패턴 불일치: {title[:50]!r}")
                 continue
             name    = re.sub(r"[\u3000\s]+", " ", nm.group(1)).strip()
             team_jp = nm.group(2).strip()
