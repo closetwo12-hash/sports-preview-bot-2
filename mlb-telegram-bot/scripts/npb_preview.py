@@ -681,85 +681,84 @@ def _get_monthly_soup():
 
 
 def fetch_recent_form(team):
-    """팀의 최근 5경기 폼 — 홈/원정 구분"""
+    """팀의 최근 5경기 폼 — 같은 tr에서 스코어 파싱"""
     soup = _get_monthly_soup()
-    score_pat = re.compile(rf"/scores/{SEASON}/(\d{{4}})/(\w+)-(\w+)-\d+/")
-    seen = set()
+    if soup is None:
+        return "-", {"home":"-","away":"-","home_detail":[],"away_detail":[]}
+
+    score_pat = re.compile(
+        r"/scores/" + SEASON + r"/(\d{4})/(\w+)-(\w+)-\d+/"
+    )
+
+    seen      = set()
     home_done = []
     away_done = []
+    all_done  = []
 
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if not href.startswith("http"): href = "https://npb.jp" + href
-        m = score_pat.search(href)
-        if not m: continue
-        mmdd_link = m.group(1)
-        if mmdd_link >= MMDD: continue  # 오늘 이후 제외
-        key = mmdd_link + m.group(2) + m.group(3)
-        if key in seen: continue
-        seen.add(key)
+    # tr 전체를 순회하면서 scores 링크 + 같은 행의 스코어 파싱
+    for row in soup.find_all(["tr","div","li","p"]):
+        row_text = row.get_text(separator=" ", strip=True)
+        row_html = str(row)
 
-        hkr = URL_CODE_KR.get(m.group(2), "")
-        akr = URL_CODE_KR.get(m.group(3), "")
-        if team not in (hkr, akr): continue
+        # 이 행에 scores 링크가 있는지
+        for a in row.find_all("a", href=True):
+            href = a.get("href","")
+            if not href.startswith("http"):
+                href = "https://npb.jp" + href
+            m = score_pat.search(href)
+            if not m: continue
 
-        text = a.get_text(separator=" ", strip=True)
-        sm = re.search(r"(\d+)-(\d+)", text)
-        if not sm: continue
+            mmdd_link = m.group(1)
+            if mmdd_link >= MMDD: continue
 
-        hs = int(sm.group(1)); vs = int(sm.group(2))
-        is_home = (team == hkr)
-        opp = akr if is_home else hkr
-        my  = hs if is_home else vs
-        op  = vs if is_home else hs
+            key = mmdd_link + m.group(2) + m.group(3)
+            if key in seen: continue
+            seen.add(key)
 
-        if my > op:   icon = "✅"
-        elif my < op: icon = "❌"
-        else:         icon = "➖"
+            hkr = URL_CODE_KR.get(m.group(2), "")
+            akr = URL_CODE_KR.get(m.group(3), "")
+            if team not in (hkr, akr): continue
 
-        entry = (icon, f"{opp}({my}:{op})")
-        if is_home:
-            if len(home_done) < 5: home_done.append(entry)
-        else:
-            if len(away_done) < 5: away_done.append(entry)
+            # 스코어 찾기: 같은 행 텍스트에서
+            sm = re.search(r"(\d+)\s*[-－]\s*(\d+)", row_text)
+            if not sm:
+                # 부모 요소까지 확대
+                parent = row.parent
+                if parent:
+                    sm = re.search(r"(\d+)\s*[-－]\s*(\d+)",
+                                   parent.get_text(separator=" ", strip=True))
+            if not sm: continue
 
-        if len(home_done) >= 5 and len(away_done) >= 5:
-            break
+            hs = int(sm.group(1))
+            vs = int(sm.group(2))
+            is_home = (team == hkr)
+            my = hs if is_home else vs
+            op = vs if is_home else hs
+            opp = akr if is_home else hkr
 
-    # 전체 최근 5경기 (홈/원정 합산)
-    all_done = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if not href.startswith("http"): href = "https://npb.jp" + href
-        m = score_pat.search(href)
-        if not m: continue
-        mmdd_link = m.group(1)
-        if mmdd_link >= MMDD: continue
-        hkr = URL_CODE_KR.get(m.group(2), "")
-        akr = URL_CODE_KR.get(m.group(3), "")
-        if team not in (hkr, akr): continue
-        text = a.get_text(separator=" ", strip=True)
-        sm = re.search(r"(\d+)-(\d+)", text)
-        if not sm: continue
-        hs = int(sm.group(1)); vs = int(sm.group(2))
-        is_home = (team == hkr)
-        my  = hs if is_home else vs
-        op  = vs if is_home else hs
-        if my > op:   icon = "✅"
-        elif my < op: icon = "❌"
-        else:         icon = "➖"
-        all_done.append(icon)
-        if len(all_done) >= 5: break
+            if my > op:   icon = "✅"
+            elif my < op: icon = "❌"
+            else:         icon = "➖"
+
+            entry = (icon, f"{opp} {my}:{op}")
+            if is_home and len(home_done) < 5:
+                home_done.append(entry)
+            elif not is_home and len(away_done) < 5:
+                away_done.append(entry)
+            if len(all_done) < 5:
+                all_done.append(icon)
+
+            if len(all_done) >= 5 and len(home_done) >= 5 and len(away_done) >= 5:
+                break
 
     form_str = " ".join(all_done) if all_done else "-"
-
-    # 홈/원정 폼 문자열
-    h_form = " ".join(x[0] for x in home_done) if home_done else "-"
-    a_form = " ".join(x[0] for x in away_done) if away_done else "-"
+    h_form   = " ".join(x[0] for x in home_done) if home_done else "-"
+    a_form   = " ".join(x[0] for x in away_done) if away_done else "-"
+    print(f"    {team} 폼: {form_str} (홈:{h_form} 원정:{a_form})")
 
     return form_str, {
-        "home": h_form,
-        "away": a_form,
+        "home":        h_form,
+        "away":        a_form,
         "home_detail": [x[1] for x in home_done],
         "away_detail": [x[1] for x in away_done],
     }
