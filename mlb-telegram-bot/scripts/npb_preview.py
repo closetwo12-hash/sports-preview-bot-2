@@ -681,59 +681,62 @@ def _get_monthly_soup():
 
 
 def fetch_recent_form(team):
-    """팀의 최근 5경기 폼 — 같은 tr에서 스코어 파싱"""
+    """
+    팀 최근 5경기 폼
+    방법: 월간일정 페이지 scores 링크 → 개별 경기 페이지에서 스코어 직접 파싱
+    """
     soup = _get_monthly_soup()
     if soup is None:
         return "-", {"home":"-","away":"-","home_detail":[],"away_detail":[]}
 
-    score_pat = re.compile(
-        r"/scores/" + SEASON + r"/(\d{4})/(\w+)-(\w+)-\d+/"
-    )
+    score_pat = re.compile(r"/scores/" + SEASON + r"/(\d{4})/(\w+)-(\w+)-(\d+)/")
 
-    seen      = set()
+    # 이전 경기 링크 수집 (오늘 이전, 팀 관련)
+    candidates = []
+    seen_keys  = set()
+    for a in soup.find_all("a", href=True):
+        href = a.get("href","")
+        m = score_pat.search(href)
+        if not m: continue
+        mmdd_link = m.group(1)
+        if mmdd_link >= MMDD: continue
+        hkr = URL_CODE_KR.get(m.group(2),"")
+        akr = URL_CODE_KR.get(m.group(3),"")
+        if team not in (hkr, akr): continue
+        key = mmdd_link + m.group(2) + m.group(3)
+        if key in seen_keys: continue
+        seen_keys.add(key)
+        full_url = href if href.startswith("http") else "https://npb.jp" + href
+        candidates.append((mmdd_link, hkr, akr, full_url))
+
+    # 최신순 정렬
+    candidates.sort(key=lambda x: x[0], reverse=True)
+
     home_done = []
     away_done = []
     all_done  = []
 
-    # tr 전체를 순회하면서 scores 링크 + 같은 행의 스코어 파싱
-    for row in soup.find_all(["tr","div","li","p"]):
-        row_text = row.get_text(separator=" ", strip=True)
-        row_html = str(row)
+    for mmdd_link, hkr, akr, url in candidates[:10]:
+        if len(all_done) >= 5 and len(home_done) >= 5 and len(away_done) >= 5:
+            break
+        try:
+            r = SESS.get(url, timeout=8)
+            if r.status_code != 200: continue
+            html = r.content.decode("utf-8","ignore")
 
-        # 이 행에 scores 링크가 있는지
-        for a in row.find_all("a", href=True):
-            href = a.get("href","")
-            if not href.startswith("http"):
-                href = "https://npb.jp" + href
-            m = score_pat.search(href)
-            if not m: continue
+            # 스코어 파싱: 일본 경기 페이지 형식
+            # "팀명 X - Y 팀명" 또는 숫자 패턴
+            score_m = re.search(
+                r"(\d+)\s*[-－]\s*(\d+)",
+                html[:3000]  # 상단 스코어 영역만
+            )
+            if not score_m: continue
 
-            mmdd_link = m.group(1)
-            if mmdd_link >= MMDD: continue
-
-            key = mmdd_link + m.group(2) + m.group(3)
-            if key in seen: continue
-            seen.add(key)
-
-            hkr = URL_CODE_KR.get(m.group(2), "")
-            akr = URL_CODE_KR.get(m.group(3), "")
-            if team not in (hkr, akr): continue
-
-            # 스코어 찾기: 같은 행 텍스트에서
-            sm = re.search(r"(\d+)\s*[-－]\s*(\d+)", row_text)
-            if not sm:
-                # 부모 요소까지 확대
-                parent = row.parent
-                if parent:
-                    sm = re.search(r"(\d+)\s*[-－]\s*(\d+)",
-                                   parent.get_text(separator=" ", strip=True))
-            if not sm: continue
-
-            hs = int(sm.group(1))
-            vs = int(sm.group(2))
+            hs = int(score_m.group(1))
+            vs = int(score_m.group(2))
             is_home = (team == hkr)
-            my = hs if is_home else vs
-            op = vs if is_home else hs
+            my  = hs if is_home else vs
+            op  = vs if is_home else hs
             opp = akr if is_home else hkr
 
             if my > op:   icon = "✅"
@@ -748,13 +751,14 @@ def fetch_recent_form(team):
             if len(all_done) < 5:
                 all_done.append(icon)
 
-            if len(all_done) >= 5 and len(home_done) >= 5 and len(away_done) >= 5:
-                break
+            time.sleep(0.2)
+        except Exception as e:
+            continue
 
     form_str = " ".join(all_done) if all_done else "-"
     h_form   = " ".join(x[0] for x in home_done) if home_done else "-"
     a_form   = " ".join(x[0] for x in away_done) if away_done else "-"
-    print(f"    {team} 폼: {form_str} (홈:{h_form} 원정:{a_form})")
+    print(f"    {team} 폼: {form_str}")
 
     return form_str, {
         "home":        h_form,
