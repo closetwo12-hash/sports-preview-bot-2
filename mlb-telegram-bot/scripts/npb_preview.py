@@ -935,12 +935,7 @@ def main():
     print("📊 데이터 보강...")
     enriched = enrich(games, yesterday)
 
-    # 헤더 메시지 먼저 발송
-    header = (f"⚾ NPB 데일리 프리뷰\n"
-              f"📅 {TODAY_KR}\n🕐 {NOW_KR}\n"
-              f"총 {len(games)}경기 분석")
-    send_msg(header)
-    time.sleep(0.5)
+
 
     # 경기별 이미지 카드 생성
     print("🎨 이미지 카드 생성...")
