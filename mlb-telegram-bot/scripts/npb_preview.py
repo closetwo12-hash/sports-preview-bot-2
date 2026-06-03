@@ -248,7 +248,7 @@ def make_card(g: dict, preview_text: str) -> bytes:
     # ── 헤더 ──────────────────────────────────────
     draw_rounded_rect(draw, [0,0,W,64], 0, BG2)
     draw.text((W//2, 20), "NPB 데일리 프리뷰", font=f_hdr, fill=TEXT2, anchor="mm")
-    date_str = f"{TODAY_KR}  {g.get('time','-')} JST  {g.get('venue','-')}"
+    date_str = f"{TODAY_KR}  오늘 {g.get('time','-')} KST  {g.get('venue','-')}"
     draw.text((W//2, 46), date_str, font=f_xs, fill=TEXT3, anchor="mm")
     y = 72
 
@@ -433,7 +433,12 @@ def _extract_games_from_links(soup, mmdd):
         text = a.get_text(separator=" ", strip=True)
         venue = venue_kr(text) if text else "-"
         time_m = re.search(r"(\d{1,2}:\d{2})", text)
-        time_str = time_m.group(1) if time_m else "18:00"
+        if time_m:
+            time_str = time_m.group(1)
+        else:
+            # 요일 기준 기본 시작 시간 (JST = KST)
+            dow = NOW_KST.weekday()  # 0=월 6=일
+            time_str = "14:00" if dow >= 5 else "18:00"
         score_m = re.search(r"\b(\d+)-(\d+)\b", text)
         finished = score_m is not None
         games.append({
