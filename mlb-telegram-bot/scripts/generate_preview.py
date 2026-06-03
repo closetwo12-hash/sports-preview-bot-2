@@ -203,13 +203,14 @@ def fetch_todays_games():
             try:
                 dt     = datetime.fromisoformat(g.get("gameDate", "").replace("Z", "+00:00"))
                 dt_kst = dt.astimezone(KST)
-                time_kst = f"{dt_kst.month}월{dt_kst.day}일 {dt_kst.strftime('%H:%M')}"
+                time_kst = dt_kst.strftime("%H:%M")
             except:
                 time_kst = "-"
 
             hn, an = home["team"]["name"], away["team"]["name"]
             games.append({
-                "gamePk":   g["gamePk"],
+                "gamePk":        g["gamePk"],
+                "game_date_utc": g.get("gameDate",""),
                 "time_kst": time_kst,
                 "venue":    g.get("venue", {}).get("name", "-"),
                 "home": {
@@ -227,7 +228,7 @@ def fetch_todays_games():
                     "lineup":  _parse_lineup(away),
                 },
             })
-    return sorted(games, key=lambda x: x["time_kst"])
+    return sorted(games, key=lambda x: x.get("game_date_utc",""))
 
 
 # ══════════════════════════════════════════════════════════════
