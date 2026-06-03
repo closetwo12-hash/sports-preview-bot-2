@@ -203,7 +203,16 @@ def fetch_todays_games():
             try:
                 dt     = datetime.fromisoformat(g.get("gameDate", "").replace("Z", "+00:00"))
                 dt_kst = dt.astimezone(KST)
-                time_kst = dt_kst.strftime("%H:%M")
+                # 날짜 차이 계산
+                now_kst = datetime.now(KST)
+                delta   = (dt_kst.date() - now_kst.date()).days
+                if delta == 0:
+                    date_label = "오늘"
+                elif delta == 1:
+                    date_label = "내일"
+                else:
+                    date_label = f"{dt_kst.month}/{dt_kst.day}"
+                time_kst = f"{date_label} {dt_kst.strftime('%H:%M')} KST"
             except:
                 time_kst = "-"
 
