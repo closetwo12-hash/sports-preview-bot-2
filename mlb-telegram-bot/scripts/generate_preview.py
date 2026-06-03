@@ -436,6 +436,41 @@ def fetch_injuries(team_id):
 # ══════════════════════════════════════════════════════════════
 # 8. 데이터 보강
 # ══════════════════════════════════════════════════════════════
+
+def fetch_recent_form_mlb(team_id: int, team_name: str) -> str:
+    """MLB 팀 최근 5경기 폼"""
+    try:
+        data = mlb_get("/schedule", {
+            "sportId": 1,
+            "teamId": team_id,
+            "startDate": (datetime.now(KST) - timedelta(days=20)).strftime("%Y-%m-%d"),
+            "endDate":   (datetime.now(KST) - timedelta(days=1)).strftime("%Y-%m-%d"),
+            "hydrate": "linescore",
+            "gameType": "R",
+        })
+        results = []
+        for db in data.get("dates", []):
+            for g in db.get("games", []):
+                if g.get("status", {}).get("abstractGameState") != "Final":
+                    continue
+                ls = g.get("linescore", {})
+                h_runs = ls.get("teams", {}).get("home", {}).get("runs")
+                a_runs = ls.get("teams", {}).get("away", {}).get("runs")
+                if h_runs is None or a_runs is None:
+                    continue
+                h_id = g["teams"]["home"]["team"]["id"]
+                is_home = (h_id == team_id)
+                my  = h_runs if is_home else a_runs
+                opp = a_runs if is_home else h_runs
+                if my > opp:   results.append("✅")
+                elif my < opp: results.append("❌")
+                else:          results.append("➖")
+        last5 = results[-5:]
+        return " ".join(last5) if last5 else "-"
+    except Exception as e:
+        print(f"  폼 수집 실패({team_name}): {e}")
+        return "-"
+
 def _lineup_handedness(lineup):
     left   = [p["name_kr"] for p in lineup if p.get("bat_side") == "L"]
     right  = [p["name_kr"] for p in lineup if p.get("bat_side") == "R"]
@@ -462,6 +497,8 @@ def enrich_games(games, yesterday_results):
         a_il = fetch_injuries(a["id"])
         h_bull = fetch_bullpen_stats(h["id"], yesterday_results)
         a_bull = fetch_bullpen_stats(a["id"], yesterday_results)
+        h_form = fetch_recent_form_mlb(h["id"], h["name_kr"])
+        a_form = fetch_recent_form_mlb(a["id"], a["name_kr"])
 
         # 전날 해당 팀 경기 결과
         h_yesterday = next(
@@ -486,6 +523,8 @@ def enrich_games(games, yesterday_results):
             "a_yesterday":   a_yesterday,
             "home_lineup_hand": _lineup_handedness(h["lineup"]),
             "away_lineup_hand": _lineup_handedness(a["lineup"]),
+            "home_form":     h_form,
+            "away_form":     a_form,
         }
     return enriched
 
@@ -729,6 +768,7 @@ def make_mlb_card(g: dict, en: dict, preview_text: str) -> bytes:
     hs = en.get("home_stats",{}); as_ = en.get("away_stats",{})
     hb = en.get("home_bull",{});  ab  = en.get("away_bull",{})
     hyl= en.get("h_yesterday");   ayl = en.get("a_yesterday")
+    hf = en.get("home_form","-"); af  = en.get("away_form","-")
 
     # ── 헤더
     draw.rectangle([0,0,W,60], fill=BG2)
@@ -804,6 +844,15 @@ def make_mlb_card(g: dict, en: dict, preview_text: str) -> bytes:
     draw.text((W//2+10, y+42), ab_txt, font=f_sm, fill=ab_col, anchor="lm")
 
     y += 74
+
+    # 최근 5경기 폼
+    draw.rounded_rectangle([16,y,W-16,y+56], radius=10, fill=BG2)
+    draw.text((36, y+14), "최근 5경기", font=f_xs, fill=T3, anchor="lm")
+    draw.text((36, y+38), f"{hn}", font=f_xs, fill=T2, anchor="lm")
+    draw_form_badges(draw, hf, 130, y+38)
+    draw.text((W//2+10, y+38), f"{an}", font=f_xs, fill=T2, anchor="lm")
+    draw_form_badges(draw, af, W//2+90, y+38)
+    y += 70
 
     # 전날 결과
     draw.rounded_rectangle([16,y,W-16,y+46], radius=10, fill=BG2)
@@ -954,13 +1003,7 @@ def main():
     print("📊 데이터 수집...")
     enriched = enrich_games(games, yesterday_results)
 
-    # 헤더 메시지 먼저 발송
-    send_message(
-        f"⚾ MLB 데일리 프리뷰\n"
-        f"📅 {TODAY_KR}\n🕐 {NOW_KR}\n"
-        f"총 {len(games)}경기 분석"
-    )
-    time.sleep(0.5)
+
 
     # 경기별 이미지 카드 생성
     print("🎨 이미지 카드 생성...")
