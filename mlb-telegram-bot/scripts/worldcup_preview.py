@@ -107,12 +107,16 @@ def fapi(path: str, params: dict = None) -> dict:
 # 2. 오늘 경기 수집 (KST 오늘 00:00 ~ 내일 06:00)
 # ══════════════════════════════════════════════════
 def fetch_today_matches() -> list:
-    print(f"  월드컵 경기 수집 ({TODAY} ~ {TOMORROW})...")
+    # 저녁 8시(KST 20:00) 발송 기준:
+    # 오늘 20:00 KST ~ 내일 20:00 KST 사이 경기 수집 (24시간)
+    kst_from = NOW_KST.replace(hour=20, minute=0, second=0, microsecond=0)
+    kst_to   = kst_from + timedelta(hours=24)  # 내일 20:00 KST
+    search_from = kst_from.strftime("%Y-%m-%d")
+    search_to   = kst_to.strftime("%Y-%m-%d")
+    print(f"  월드컵 경기 수집 ({search_from} ~ {search_to})...")
     data = fapi("/matches", {"competitions": "WC",
-                             "dateFrom": TODAY, "dateTo": TOMORROW})
+                             "dateFrom": search_from, "dateTo": search_to})
     matches  = []
-    kst_from = NOW_KST.replace(hour=0, minute=0, second=0, microsecond=0)
-    kst_to   = kst_from + timedelta(hours=30)  # 내일 오전 6시까지
 
     for m in data.get("matches", []):
         if m.get("status") in ("FINISHED", "IN_PLAY", "PAUSED"):
