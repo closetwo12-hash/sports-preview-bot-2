@@ -714,90 +714,70 @@ def _get_monthly_soup():
 
 
 def fetch_recent_form(team):
-    """
-    팀 최근 5경기 폼
-    방법: 월간일정 페이지 scores 링크 → 개별 경기 페이지에서 스코어 직접 파싱
-    """
+    """팀 최근 5경기 폼 - 월간일정 페이지 링크+텍스트에서 직접 파싱"""
     soup = _get_monthly_soup()
     if soup is None:
         return "-", {"home":"-","away":"-","home_detail":[],"away_detail":[]}
 
-    score_pat = re.compile(r"/scores/" + SEASON + r"/(\d{4})/(\w+)-(\w+)-(\d+)/")
+    score_pat = re.compile(r"/scores/" + SEASON + r"/(\d{4})/(\w+)-(\w+)-\d+/")
+    seen = set()
+    all_done = []
 
-    # 이전 경기 링크 수집 (오늘 이전, 팀 관련)
-    candidates = []
-    seen_keys  = set()
+    # 모든 태그에서 scores 링크 찾기
     for a in soup.find_all("a", href=True):
+        if len(all_done) >= 5:
+            break
         href = a.get("href","")
         m = score_pat.search(href)
-        if not m: continue
+        if not m:
+            continue
         mmdd_link = m.group(1)
-        if mmdd_link >= MMDD: continue
-        hkr = URL_CODE_KR.get(m.group(2),"")
-        akr = URL_CODE_KR.get(m.group(3),"")
-        if team not in (hkr, akr): continue
-        key = mmdd_link + m.group(2) + m.group(3)
-        if key in seen_keys: continue
-        seen_keys.add(key)
-        full_url = href if href.startswith("http") else "https://npb.jp" + href
-        candidates.append((mmdd_link, hkr, akr, full_url))
-
-    # 최신순 정렬
-    candidates.sort(key=lambda x: x[0], reverse=True)
-
-    home_done = []
-    away_done = []
-    all_done  = []
-
-    for mmdd_link, hkr, akr, url in candidates[:6]:
-        if len(all_done) >= 5 and len(home_done) >= 5 and len(away_done) >= 5:
-            break
-        try:
-            r = SESS.get(url, timeout=8)
-            if r.status_code != 200: continue
-            html = r.content.decode("utf-8","ignore")
-
-            # 스코어 파싱: 일본 경기 페이지 형식
-            # "팀명 X - Y 팀명" 또는 숫자 패턴
-            score_m = re.search(
-                r"(\d+)\s*[-－]\s*(\d+)",
-                html[:3000]  # 상단 스코어 영역만
-            )
-            if not score_m: continue
-
-            hs = int(score_m.group(1))
-            vs = int(score_m.group(2))
-            is_home = (team == hkr)
-            my  = hs if is_home else vs
-            op  = vs if is_home else hs
-            opp = akr if is_home else hkr
-
-            if my > op:   icon = "✅"
-            elif my < op: icon = "❌"
-            else:         icon = "➖"
-
-            entry = (icon, f"{opp} {my}:{op}")
-            if is_home and len(home_done) < 5:
-                home_done.append(entry)
-            elif not is_home and len(away_done) < 5:
-                away_done.append(entry)
-            if len(all_done) < 5:
-                all_done.append(icon)
-
-            time.sleep(0.1)
-        except Exception as e:
+        if mmdd_link >= MMDD:
             continue
 
+        hkr = URL_CODE_KR.get(m.group(2),"")
+        akr = URL_CODE_KR.get(m.group(3),"")
+        if team not in (hkr, akr):
+            continue
+
+        key = mmdd_link + m.group(2) + m.group(3)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        # 같은 tr 또는 부모에서 스코어 찾기
+        score_text = ""
+        for parent in [a.parent, a.parent.parent if a.parent else None]:
+            if parent:
+                t = parent.get_text(separator=" ", strip=True)
+                if re.search(r"\d+\s*[-－]\s*\d+", t):
+                    score_text = t
+                    break
+
+        sm = re.search(r"(\d+)\s*[-－]\s*(\d+)", score_text)
+        if not sm:
+            continue
+
+        hs = int(sm.group(1))
+        vs = int(sm.group(2))
+        is_home = (team == hkr)
+        my = hs if is_home else vs
+        op = vs if is_home else hs
+
+        if my > op:   icon = "✅"
+        elif my < op: icon = "❌"
+        else:         icon = "➖"
+
+        all_done.append(icon)
+
     form_str = " ".join(all_done) if all_done else "-"
-    h_form   = " ".join(x[0] for x in home_done) if home_done else "-"
-    a_form   = " ".join(x[0] for x in away_done) if away_done else "-"
     print(f"    {team} 폼: {form_str}")
 
     return form_str, {
-        "home":        h_form,
-        "away":        a_form,
-        "home_detail": [x[1] for x in home_done],
-        "away_detail": [x[1] for x in away_done],
+        "home":  form_str,
+        "away":  form_str,
+        "home_detail": [],
+        "away_detail": [],
     }
 
 
@@ -957,6 +937,8 @@ def send_msg(text: str):
 # ══════════════════════════════════════════════════
 def main():
     print(f"[{TODAY_KR}] NPB 프리뷰 시작...")
+    # 폰트 미리 다운로드 (첫 카드에서 지연 방지)
+    _download_font_if_needed()
 
     print("📡 전날 결과 수집...")
     yesterday = fetch_yesterday_results()
