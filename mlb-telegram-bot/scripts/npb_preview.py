@@ -494,7 +494,7 @@ def _parse_starters(soup) -> dict:
                 name_display = pitcher_kr(name)
                 starters[team_kr] = name_display
                 print(f"    ✅ {team_kr}: {name_display} ({name})")
-            time.sleep(0.2)
+            time.sleep(0.1)
         except Exception as e:
             print(f"    [{pid}] 오류: {e}")
 
@@ -719,7 +719,7 @@ def fetch_recent_form(team):
     away_done = []
     all_done  = []
 
-    for mmdd_link, hkr, akr, url in candidates[:10]:
+    for mmdd_link, hkr, akr, url in candidates[:6]:
         if len(all_done) >= 5 and len(home_done) >= 5 and len(away_done) >= 5:
             break
         try:
@@ -754,7 +754,7 @@ def fetch_recent_form(team):
             if len(all_done) < 5:
                 all_done.append(icon)
 
-            time.sleep(0.2)
+            time.sleep(0.1)
         except Exception as e:
             continue
 
@@ -847,7 +847,7 @@ def build_single_prompt(g: dict) -> str:
     h_rank = f"{hs.get('rank','-')}위 {hs.get('win','-')}승{hs.get('lose','-')}패 (승률 {hs.get('wpct','-')}) ERA {hs.get('era','-')} OPS {hs.get('ops','-')}"
     a_rank = f"{as_.get('rank','-')}위 {as_.get('win','-')}승{as_.get('lose','-')}패 (승률 {as_.get('wpct','-')}) ERA {as_.get('era','-')} OPS {as_.get('ops','-')}"
 
-    return f"""NPB 칼럼니스트로서 아래 경기 프리뷰를 300자 내외로 작성하세요.
+    return f"""NPB 칼럼니스트로서 아래 경기 프리뷰를 150자 내외로 간결하게 작성하세요.
 마지막 줄은 반드시 "오늘의 예상: {{팀명}} 우세" 형식으로 끝내세요.
 마크다운 기호 금지. 수치 나열 금지. 스토리텔링 우선.
 
@@ -868,9 +868,9 @@ def call_claude_single(prompt: str) -> str:
             headers={"x-api-key":ANTHROPIC_API_KEY,
                      "anthropic-version":"2023-06-01",
                      "content-type":"application/json"},
-            json={"model":"claude-sonnet-4-6","max_tokens":800,
+            json={"model":"claude-sonnet-4-6","max_tokens":500,
                   "messages":[{"role":"user","content":prompt}]},
-            timeout=60,
+            timeout=45,
         )
         if r.status_code!=200: return "분석 생성 실패"
         return r.json()["content"][0]["text"]
@@ -902,7 +902,7 @@ def send_media_group(image_bytes_list: list):
                 data={"chat_id": TELEGRAM_CHAT_ID,
                       "media": __import__('json').dumps(media)},
                 files=files,
-                timeout=60,
+                timeout=45,
             )
             if r.status_code == 200:
                 print(f"✅ 묶음 발송 완료 ({len(batch)}장)")
@@ -910,7 +910,7 @@ def send_media_group(image_bytes_list: list):
                 print(f"⚠️ 발송 실패: {r.text[:200]}")
         except Exception as e:
             print(f"⚠️ 발송 오류: {e}")
-        time.sleep(1)
+        time.sleep(0.5)
 
 def send_msg(text: str):
     """텍스트 메시지 발송 (헤더용)"""
@@ -956,7 +956,7 @@ def main():
         img_bytes = make_card(g, preview)
         image_list.append(img_bytes)
         print(f"  ✅ 카드 생성 완료")
-        time.sleep(1)
+        time.sleep(0.5)
 
     # 묶음 발송
     print("📨 이미지 묶음 발송...")
