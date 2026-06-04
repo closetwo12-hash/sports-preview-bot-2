@@ -728,21 +728,60 @@ def generate_preview_text(prompt):
 # ══════════════════════════════════════════════════════════════
 # 11. 이미지 카드 생성 (경기별 카드)
 # ══════════════════════════════════════════════════════════════
+def _download_font_if_needed():
+    """폰트가 없으면 GitHub에서 다운로드"""
+    import os
+    font_dir = "/tmp/fonts"
+    font_path = f"{font_dir}/NotoSansCJK-Regular.ttc"
+    bold_path  = f"{font_dir}/NotoSansCJK-Bold.ttc"
+
+    if os.path.exists(font_path):
+        return font_dir
+
+    os.makedirs(font_dir, exist_ok=True)
+    try:
+        import urllib.request
+        url = "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTC/NotoSansCJK-Regular.ttc"
+        print(f"  폰트 다운로드 중...")
+        urllib.request.urlretrieve(url, font_path)
+        print(f"  ✅ 폰트 다운로드 완료")
+    except Exception as e:
+        print(f"  ⚠️ 폰트 다운로드 실패: {e}")
+    return font_dir
+
 FONT_PATHS = [
+    # Nix 환경 (Railway)
+    "/run/current-system/sw/share/X11/fonts/NotoSansCJK-Bold.ttc",
+    "/run/current-system/sw/share/X11/fonts/NotoSansCJK-Regular.ttc",
+    # Ubuntu 환경 (GitHub Actions)
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-DemiLight.ttc",
+    # 동적 다운로드
+    "/tmp/fonts/NotoSansCJK-Bold.ttc",
+    "/tmp/fonts/NotoSansCJK-Regular.ttc",
 ]
 
 def get_font(size, bold=False):
     paths = FONT_PATHS if bold else FONT_PATHS[1:]
     for p in paths:
-        try: return ImageFont.truetype(p, size)
-        except: pass
+        try:
+            return ImageFont.truetype(p, size)
+        except:
+            pass
+    # 없으면 다운로드 후 재시도
+    _download_font_if_needed()
+    for p in ["/tmp/fonts/NotoSansCJK-Bold.ttc", "/tmp/fonts/NotoSansCJK-Regular.ttc"]:
+        try:
+            return ImageFont.truetype(p, size)
+        except:
+            pass
     return ImageFont.load_default()
+
+
 
 def draw_form_badges(draw, form_str, x, y):
     icons = {"W": (34,197,94), "L": (239,68,68), "D": (71,85,105)}
