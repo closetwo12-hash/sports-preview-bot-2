@@ -765,9 +765,9 @@ def make_mlb_card(g: dict, en: dict, preview_text: str) -> bytes:
     img  = Image.new("RGB", (W, H), BG)
     draw = ImageDraw.Draw(img)
 
-    f_big  = get_font(28, bold=True)
+    f_big  = get_font(30, bold=True)
     f_med  = get_font(20, bold=True)
-    f_base = get_font(17)
+    f_base = get_font(18)
     f_sm   = get_font(14)
     f_xs   = get_font(12)
     f_hdr  = get_font(13)
@@ -817,10 +817,10 @@ def make_mlb_card(g: dict, en: dict, preview_text: str) -> bytes:
     draw.line([36,y+90,16+BOX_W-20,y+90], fill=DIV, width=1)
     h_rec = f"{hs.get('wins','-')}승 {hs.get('losses','-')}패  ERA {hs.get('era','-')}"
     draw.text((16+BOX_W//2, y+108), h_rec, font=f_sm, fill=T2, anchor="mm")
-    h_sp = f"선발: {hp.get('name_kr','미정')} ({'좌완' if hp.get('throws')=='L' else '우완'})"
-    draw.text((36, y+134), h_sp, font=f_sm, fill=(*hc,), anchor="lm")
-    h_era = f"ERA {en.get('home_pitcher_adv',{}).get('era','-')}  WHIP {en.get('home_pitcher_adv',{}).get('whip','-')}"
-    draw.text((36, y+154), h_era, font=f_xs, fill=T3, anchor="lm")
+    h_sp_name = f"{hp.get('name_kr','미정')}"
+    h_sp_info = f"({'좌완' if hp.get('throws')=='L' else '우완'})  ERA {en.get('home_pitcher_adv',{}).get('era','-')}  WHIP {en.get('home_pitcher_adv',{}).get('whip','-')}"
+    draw.text((36, y+130), h_sp_name, font=f_base, fill=T1, anchor="lm")
+    draw.text((36, y+152), h_sp_info, font=f_xs, fill=T2, anchor="lm")
 
     # VS
     draw.text((W//2, y+86), "VS", font=f_med, fill=T3, anchor="mm")
@@ -834,10 +834,10 @@ def make_mlb_card(g: dict, en: dict, preview_text: str) -> bytes:
     draw.line([ax+20,y+90,ax+BOX_W-20,y+90], fill=DIV, width=1)
     a_rec = f"{as_.get('wins','-')}승 {as_.get('losses','-')}패  ERA {as_.get('era','-')}"
     draw.text((ax+BOX_W//2, y+108), a_rec, font=f_sm, fill=T2, anchor="mm")
-    a_sp = f"선발: {ap.get('name_kr','미정')} ({'좌완' if ap.get('throws')=='L' else '우완'})"
-    draw.text((ax+20, y+134), a_sp, font=f_sm, fill=(*ac,), anchor="lm")
-    a_era = f"ERA {en.get('away_pitcher_adv',{}).get('era','-')}  WHIP {en.get('away_pitcher_adv',{}).get('whip','-')}"
-    draw.text((ax+20, y+154), a_era, font=f_xs, fill=T3, anchor="lm")
+    a_sp_name = f"{ap.get('name_kr','미정')}"
+    a_sp_info = f"({'좌완' if ap.get('throws')=='L' else '우완'})  ERA {en.get('away_pitcher_adv',{}).get('era','-')}  WHIP {en.get('away_pitcher_adv',{}).get('whip','-')}"
+    draw.text((ax+20, y+130), a_sp_name, font=f_base, fill=T1, anchor="lm")
+    draw.text((ax+20, y+152), a_sp_info, font=f_xs, fill=T2, anchor="lm")
 
     y += BOX_H + 12
 
