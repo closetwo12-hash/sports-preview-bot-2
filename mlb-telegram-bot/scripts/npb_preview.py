@@ -167,17 +167,47 @@ def venue_kr(s):
 # 폰트 로드
 # ══════════════════════════════════════════════════
 FONT_PATHS = [
+    # Nix 환경 (Railway)
+    "/run/current-system/sw/share/X11/fonts/NotoSansCJK-Bold.ttc",
+    "/run/current-system/sw/share/X11/fonts/NotoSansCJK-Regular.ttc",
+    # Ubuntu 환경 (GitHub Actions)
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-DemiLight.ttc",
+    # 레포 내 폰트 (fallback)
+    "fonts/NotoSansCJK-Regular.ttc",
+    "fonts/NotoSansCJK-Bold.ttc",
 ]
+
+def _download_font_if_needed():
+    import os, urllib.request
+    font_path = "/tmp/fonts/NotoSansCJK-Regular.ttc"
+    if os.path.exists(font_path):
+        return
+    os.makedirs("/tmp/fonts", exist_ok=True)
+    try:
+        print("  폰트 다운로드 중...")
+        urllib.request.urlretrieve(
+            "https://github.com/googlefonts/noto-cjk/raw/main/Sans/OTC/NotoSansCJK-Regular.ttc",
+            font_path
+        )
+        print("  ✅ 폰트 다운로드 완료")
+    except Exception as e:
+        print(f"  ⚠️ 폰트 다운로드 실패: {e}")
 
 def get_font(size, bold=False):
     paths = FONT_PATHS if bold else FONT_PATHS[1:]
     for p in paths:
+        try:
+            return ImageFont.truetype(p, size)
+        except:
+            pass
+    # 없으면 다운로드 후 재시도
+    _download_font_if_needed()
+    for p in ["/tmp/fonts/NotoSansCJK-Regular.ttc"]:
         try:
             return ImageFont.truetype(p, size)
         except:
