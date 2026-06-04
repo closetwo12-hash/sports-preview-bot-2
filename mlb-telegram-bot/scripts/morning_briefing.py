@@ -282,6 +282,147 @@ def build_prompt(market_data: dict, news: dict) -> str:
 10. {{뉴스 제목 요약 (한국어)}}"""
 
 
+
+# ══════════════════════════════════════════════════════════════
+# 오늘의 스포츠 경기 일정
+# ══════════════════════════════════════════════════════════════
+def fetch_today_schedule() -> str:
+    """오늘 주요 스포츠 경기 일정 수집"""
+    lines = []
+    KST = timezone(timedelta(hours=9))
+    now = datetime.now(KST)
+    today_str = now.strftime("%Y-%m-%d")
+    tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # ── 축구: football-data.org ───────────────────────
+    FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY","")
+    if FOOTBALL_API_KEY:
+        leagues = {
+            "PL":  "🏴󠁧󠁢󠁥󠁮󠁧󠁿 프리미어리그",
+            "PD":  "🇪🇸 라리가",
+            "SA":  "🇮🇹 세리에A",
+            "BL1": "🇩🇪 분데스리가",
+            "FL1": "🇫🇷 리그1",
+            "WC":  "🌍 FIFA 월드컵",
+        }
+        football_lines = []
+        for code, name in leagues.items():
+            try:
+                r = requests.get(
+                    f"https://api.football-data.org/v4/matches",
+                    params={"competitions": code, "dateFrom": today_str, "dateTo": tomorrow_str},
+                    headers={"X-Auth-Token": FOOTBALL_API_KEY},
+                    timeout=8
+                )
+                if r.status_code != 200:
+                    continue
+                matches = r.json().get("matches", [])
+                # KST 기준 오늘 20:00 ~ 내일 20:00
+                kst_from = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                kst_to   = kst_from + timedelta(hours=48)
+                today_matches = []
+                for m in matches:
+                    if m.get("status") in ("FINISHED","IN_PLAY","PAUSED","CANCELLED","POSTPONED"):
+                        continue
+                    try:
+                        utc = datetime.fromisoformat(m["utcDate"].replace("Z","+00:00"))
+                        kst = utc.astimezone(KST)
+                        if kst_from <= kst < kst_to:
+                            ht = m["homeTeam"].get("shortName") or m["homeTeam"]["name"]
+                            at = m["awayTeam"].get("shortName") or m["awayTeam"]["name"]
+                            today_matches.append(f"{kst.strftime('%H:%M')} {at} vs {ht}")
+                    except:
+                        pass
+                if today_matches:
+                    football_lines.append(f"{name}: {' / '.join(today_matches[:3])}")
+            except:
+                pass
+        if football_lines:
+            lines.append("⚽ 축구")
+            lines.extend([f"  {l}" for l in football_lines])
+
+    # ── MLB ───────────────────────────────────────────
+    try:
+        r = requests.get(
+            "https://statsapi.mlb.com/api/v1/schedule",
+            params={"sportId":1, "date": today_str, "hydrate":"team"},
+            timeout=8
+        )
+        if r.status_code == 200:
+            games = []
+            for db in r.json().get("dates",[]):
+                for g in db.get("games",[]):
+                    if g.get("status",{}).get("abstractGameState") == "Final":
+                        continue
+                    hn = g["teams"]["home"]["team"]["name"]
+                    an = g["teams"]["away"]["team"]["name"]
+                    try:
+                        utc = datetime.fromisoformat(g["gameDate"].replace("Z","+00:00"))
+                        kst = utc.astimezone(KST)
+                        t   = kst.strftime("%H:%M")
+                    except:
+                        t = "-"
+                    games.append(f"{t} {an[:6]} @ {hn[:6]}")
+            if games:
+                lines.append(f"⚾ MLB ({len(games)}경기): {' / '.join(games[:4])}" +
+                             (f" 외 {len(games)-4}경기" if len(games)>4 else ""))
+    except:
+        pass
+
+    # ── NPB ───────────────────────────────────────────
+    try:
+        r = requests.get(
+            "https://npb.jp/announcement/starter/",
+            headers={"User-Agent":"Mozilla/5.0","Referer":"https://npb.jp/"},
+            timeout=8
+        )
+        if r.status_code == 200:
+            from bs4 import BeautifulSoup
+            import re
+            soup = BeautifulSoup(r.content.decode("utf-8","ignore"), "html.parser")
+            mmdd = now.strftime("%m%d")
+            pat  = re.compile(rf"/scores/\d{{4}}/{mmdd}/(\w+)-(\w+)-\d+/")
+            URL_KR = {
+                "g":"요미우리","s":"야쿠르트","db":"DeNA","d":"주니치",
+                "t":"한신","c":"히로시마","h":"소프트뱅크","f":"닛폰햄",
+                "b":"오릭스","e":"라쿠텐","l":"세이부","m":"롯데",
+            }
+            seen = set(); npb_games = []
+            for a in soup.find_all("a", href=True):
+                m = pat.search(a["href"])
+                if not m: continue
+                key = m.group(1)+m.group(2)
+                if key in seen: continue
+                seen.add(key)
+                h = URL_KR.get(m.group(1),"")
+                a_ = URL_KR.get(m.group(2),"")
+                if h and a_: npb_games.append(f"{a_}@{h}")
+            if npb_games:
+                lines.append(f"🇯🇵 NPB ({len(npb_games)}경기): {' / '.join(npb_games)}")
+    except:
+        pass
+
+    # ── KBO ───────────────────────────────────────────
+    try:
+        r = requests.post(
+            "https://www.koreabaseball.com/ws/Main.asmx/GetKboGameList",
+            data={"leId":"1","srId":"0,9","date":now.strftime("%Y%m%d")},
+            headers={"Content-Type":"application/x-www-form-urlencoded",
+                     "X-Requested-With":"XMLHttpRequest",
+                     "User-Agent":"Mozilla/5.0"},
+            timeout=8
+        )
+        if r.status_code == 200:
+            games = r.json().get("game", r.json().get("games",[]))
+            if games:
+                lines.append(f"🇰🇷 KBO ({len(games)}경기)")
+    except:
+        pass
+
+    if not lines:
+        return "  경기 일정 수집 실패"
+    return "\n".join(lines)
+
 def call_claude(prompt: str) -> str:
     r = requests.post(
         "https://api.anthropic.com/v1/messages",
@@ -374,12 +515,24 @@ def main():
         f"{market_text}"
     )
 
+    print("📅 오늘의 경기 일정 수집...")
+    schedule_text = fetch_today_schedule()
+
     print("📨 발송...")
     # 1부: 증시 수치
     send_msg(header)
     time.sleep(0.5)
     # 2부: Claude 해설 + 뉴스
     send_long(briefing + "\n\n📩 VIP 조합상담 문의는\n👉 @HC_VV77 클릭 후 문의")
+    time.sleep(0.5)
+    # 3부: 오늘의 경기 일정
+    schedule_msg = (
+        f"📋 오늘의 경기 일정\n"
+        f"{'─'*28}\n"
+        f"{schedule_text}\n\n"
+        f"📩 VIP 조합상담 문의는\n👉 @HC_VV77 클릭 후 문의"
+    )
+    send_msg(schedule_msg)
     print("🎉 완료!")
 
 
