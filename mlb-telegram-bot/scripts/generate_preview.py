@@ -243,6 +243,36 @@ def fetch_todays_games():
 # ══════════════════════════════════════════════════════════════
 # 4. 팀 시즌 스탯
 # ══════════════════════════════════════════════════════════════
+# 스탠딩 캐시 (API 호출 최소화)
+_STANDINGS_CACHE = {}
+
+def fetch_standings_cache():
+    global _STANDINGS_CACHE
+    if _STANDINGS_CACHE:
+        return _STANDINGS_CACHE
+    try:
+        data = mlb_get("/standings", {
+            "leagueId": "103,104",  # AL, NL
+            "season": SEASON,
+            "standingsTypes": "regularSeason",
+        })
+        for record in data.get("records", []):
+            div_name = record.get("division", {}).get("nameShort", "")
+            for tr in record.get("teamRecords", []):
+                tid = tr["team"]["id"]
+                _STANDINGS_CACHE[tid] = {
+                    "wins":   tr.get("wins", "-"),
+                    "losses": tr.get("losses", "-"),
+                    "pct":    tr.get("winningPercentage", "-"),
+                    "rank":   tr.get("divisionRank", "-"),
+                    "div":    div_name,
+                    "gb":     tr.get("gamesBack", "-"),
+                }
+    except Exception as e:
+        print(f"  스탠딩 수집 실패: {e}")
+    return _STANDINGS_CACHE
+
+
 def fetch_team_season_stats(team_id):
     try:
         data = mlb_get(f"/teams/{team_id}/stats",
@@ -262,9 +292,25 @@ def fetch_team_season_stats(team_id):
         if rs > 0 and ra > 0:
             e = 1.83
             pyth = f"{rs**e / (rs**e + ra**e):.3f}"
-        return {"rs": rs, "ra": ra, "ops": ops, "era": era, "avg": avg, "pythagorean": pyth}
+
+        # 승패/순위 추가
+        standings = fetch_standings_cache()
+        st = standings.get(team_id, {})
+
+        return {
+            "rs": rs, "ra": ra, "ops": ops, "era": era, "avg": avg,
+            "pythagorean": pyth,
+            "wins":   st.get("wins", "-"),
+            "losses": st.get("losses", "-"),
+            "pct":    st.get("pct", "-"),
+            "rank":   st.get("rank", "-"),
+            "div":    st.get("div", "-"),
+            "gb":     st.get("gb", "-"),
+        }
     except:
-        return {"rs": 0, "ra": 0, "ops": "-", "era": "-", "avg": "-", "pythagorean": "-"}
+        return {"rs": 0, "ra": 0, "ops": "-", "era": "-", "avg": "-",
+                "pythagorean": "-", "wins": "-", "losses": "-",
+                "pct": "-", "rank": "-", "div": "-", "gb": "-"}
 
 
 # ══════════════════════════════════════════════════════════════
@@ -854,8 +900,12 @@ def make_mlb_card(g: dict, en: dict, preview_text: str) -> bytes:
     draw.text((16+BOX_W//2, y+30), "홈", font=f_sm, fill=(*hc,255)[:3], anchor="mm")
     draw.text((16+BOX_W//2, y+68), hn, font=f_big, fill=T1, anchor="mm")
     draw.line([36,y+90,16+BOX_W-20,y+90], fill=DIV, width=1)
-    h_rec = f"{hs.get('wins','-')}승 {hs.get('losses','-')}패  ERA {hs.get('era','-')}"
-    draw.text((16+BOX_W//2, y+108), h_rec, font=f_sm, fill=T2, anchor="mm")
+    h_wins = hs.get('wins','-'); h_losses = hs.get('losses','-')
+    h_rank = hs.get('rank','-'); h_div = hs.get('div','-')
+    h_rec = f"{h_wins}승 {h_losses}패  {h_div} {h_rank}위"
+    draw.text((16+BOX_W//2, y+104), h_rec, font=f_sm, fill=T2, anchor="mm")
+    h_era_txt = f"팀ERA {hs.get('era','-')}  OPS {hs.get('ops','-')}"
+    draw.text((16+BOX_W//2, y+122), h_era_txt, font=f_xs, fill=T3, anchor="mm")
     h_sp_name = f"{hp.get('name_kr','미정')}"
     h_sp_info = f"({'좌완' if hp.get('throws')=='L' else '우완'})  ERA {en.get('home_pitcher_adv',{}).get('era','-')}  WHIP {en.get('home_pitcher_adv',{}).get('whip','-')}"
     draw.text((36, y+130), h_sp_name, font=f_base, fill=T1, anchor="lm")
@@ -871,8 +921,12 @@ def make_mlb_card(g: dict, en: dict, preview_text: str) -> bytes:
     draw.text((ax+BOX_W//2, y+30), "원정", font=f_sm, fill=(*ac,255)[:3], anchor="mm")
     draw.text((ax+BOX_W//2, y+68), an, font=f_big, fill=T1, anchor="mm")
     draw.line([ax+20,y+90,ax+BOX_W-20,y+90], fill=DIV, width=1)
-    a_rec = f"{as_.get('wins','-')}승 {as_.get('losses','-')}패  ERA {as_.get('era','-')}"
-    draw.text((ax+BOX_W//2, y+108), a_rec, font=f_sm, fill=T2, anchor="mm")
+    a_wins = as_.get('wins','-'); a_losses = as_.get('losses','-')
+    a_rank = as_.get('rank','-'); a_div = as_.get('div','-')
+    a_rec = f"{a_wins}승 {a_losses}패  {a_div} {a_rank}위"
+    draw.text((ax+BOX_W//2, y+104), a_rec, font=f_sm, fill=T2, anchor="mm")
+    a_era_txt = f"팀ERA {as_.get('era','-')}  OPS {as_.get('ops','-')}"
+    draw.text((ax+BOX_W//2, y+122), a_era_txt, font=f_xs, fill=T3, anchor="mm")
     a_sp_name = f"{ap.get('name_kr','미정')}"
     a_sp_info = f"({'좌완' if ap.get('throws')=='L' else '우완'})  ERA {en.get('away_pitcher_adv',{}).get('era','-')}  WHIP {en.get('away_pitcher_adv',{}).get('whip','-')}"
     draw.text((ax+20, y+130), a_sp_name, font=f_base, fill=T1, anchor="lm")
