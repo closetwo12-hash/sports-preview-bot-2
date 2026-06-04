@@ -229,9 +229,9 @@ def make_card(g: dict, preview_text: str) -> bytes:
     draw = ImageDraw.Draw(img)
 
     # 폰트
-    f_big   = get_font(30, bold=True)
+    f_big   = get_font(32, bold=True)
     f_med   = get_font(22, bold=True)
-    f_base  = get_font(18)
+    f_base  = get_font(19)
     f_sm    = get_font(15)
     f_xs    = get_font(13)
     f_hdr   = get_font(14)
@@ -266,10 +266,9 @@ def make_card(g: dict, preview_text: str) -> bytes:
               + (f" {h_draw}무" if h_draw not in ('0','-','') else ""))
     draw.text((16+BOX_W//2, y+106), rank_h, font=f_sm, fill=TEXT2, anchor="mm")
     draw.line([36, y+120, 16+BOX_W-20, y+120], fill=DIVIDER, width=1)
-    sp_h = f"선발: {g.get('home_pitcher','미정')}"
-    draw.text((36, y+134), sp_h, font=f_sm, fill=(*hc,), anchor="lm")
+    draw.text((36, y+130), g.get('home_pitcher','미정'), font=f_base, fill=TEXT1, anchor="lm")
     era_h = f"ERA {hp.get('era','-')}  WHIP {hp.get('whip','-')}  {hp.get('w','-')}승{hp.get('l','-')}패"
-    draw.text((36, y+152), era_h, font=f_xs, fill=TEXT3, anchor="lm")
+    draw.text((36, y+152), era_h, font=f_xs, fill=TEXT2, anchor="lm")
 
     # 원정팀
     ax = W - 16 - BOX_W
@@ -283,10 +282,9 @@ def make_card(g: dict, preview_text: str) -> bytes:
               + (f" {a_draw}무" if a_draw not in ('0','-','') else ""))
     draw.text((ax+BOX_W//2, y+106), rank_a, font=f_sm, fill=TEXT2, anchor="mm")
     draw.line([ax+20, y+120, ax+BOX_W-20, y+120], fill=DIVIDER, width=1)
-    sp_a = f"선발: {g.get('away_pitcher','미정')}"
-    draw.text((ax+20, y+134), sp_a, font=f_sm, fill=(*ac,), anchor="lm")
+    draw.text((ax+20, y+130), g.get('away_pitcher','미정'), font=f_base, fill=TEXT1, anchor="lm")
     era_a = f"ERA {ap.get('era','-')}  WHIP {ap.get('whip','-')}  {ap.get('w','-')}승{ap.get('l','-')}패"
-    draw.text((ax+20, y+152), era_a, font=f_xs, fill=TEXT3, anchor="lm")
+    draw.text((ax+20, y+152), era_a, font=f_xs, fill=TEXT2, anchor="lm")
 
     # VS
     draw.text((W//2, y+90), "VS", font=f_med, fill=TEXT3, anchor="mm")
