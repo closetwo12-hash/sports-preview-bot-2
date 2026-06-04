@@ -1,0 +1,9 @@
+[phases.setup]
+nixPkgs = ["python311", "noto-fonts-cjk"]
+ 
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+ 
+[start]
+cmd = "echo ready"
+ 
