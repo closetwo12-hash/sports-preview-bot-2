@@ -287,66 +287,20 @@ def build_prompt(market_data: dict, news: dict) -> str:
 # 오늘의 스포츠 경기 일정
 # ══════════════════════════════════════════════════════════════
 def fetch_today_schedule() -> str:
-    """오늘 주요 스포츠 경기 일정 수집"""
-    lines = []
+    """오늘 주요 스포츠 경기 일정 수집 — 세부 정보 포함"""
     KST = timezone(timedelta(hours=9))
     now = datetime.now(KST)
-    today_str = now.strftime("%Y-%m-%d")
+    today_str    = now.strftime("%Y-%m-%d")
     tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+    sections = []
 
-    # ── 축구: football-data.org ───────────────────────
-    FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY","")
-    if FOOTBALL_API_KEY:
-        leagues = {
-            "PL":  "🏴󠁧󠁢󠁥󠁮󠁧󠁿 프리미어리그",
-            "PD":  "🇪🇸 라리가",
-            "SA":  "🇮🇹 세리에A",
-            "BL1": "🇩🇪 분데스리가",
-            "FL1": "🇫🇷 리그1",
-            "WC":  "🌍 FIFA 월드컵",
-        }
-        football_lines = []
-        for code, name in leagues.items():
-            try:
-                r = requests.get(
-                    f"https://api.football-data.org/v4/matches",
-                    params={"competitions": code, "dateFrom": today_str, "dateTo": tomorrow_str},
-                    headers={"X-Auth-Token": FOOTBALL_API_KEY},
-                    timeout=8
-                )
-                if r.status_code != 200:
-                    continue
-                matches = r.json().get("matches", [])
-                # KST 기준 오늘 20:00 ~ 내일 20:00
-                kst_from = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                kst_to   = kst_from + timedelta(hours=48)
-                today_matches = []
-                for m in matches:
-                    if m.get("status") in ("FINISHED","IN_PLAY","PAUSED","CANCELLED","POSTPONED"):
-                        continue
-                    try:
-                        utc = datetime.fromisoformat(m["utcDate"].replace("Z","+00:00"))
-                        kst = utc.astimezone(KST)
-                        if kst_from <= kst < kst_to:
-                            ht = m["homeTeam"].get("shortName") or m["homeTeam"]["name"]
-                            at = m["awayTeam"].get("shortName") or m["awayTeam"]["name"]
-                            today_matches.append(f"{kst.strftime('%H:%M')} {at} vs {ht}")
-                    except:
-                        pass
-                if today_matches:
-                    football_lines.append(f"{name}: {' / '.join(today_matches[:3])}")
-            except:
-                pass
-        if football_lines:
-            lines.append("⚽ 축구")
-            lines.extend([f"  {l}" for l in football_lines])
-
-    # ── MLB ───────────────────────────────────────────
+    # ── MLB ──────────────────────────────────────────
     try:
         r = requests.get(
             "https://statsapi.mlb.com/api/v1/schedule",
-            params={"sportId":1, "date": today_str, "hydrate":"team"},
-            timeout=8
+            params={"sportId":1, "date": today_str,
+                    "hydrate":"team,probablePitcher"},
+            timeout=10
         )
         if r.status_code == 200:
             games = []
@@ -356,30 +310,56 @@ def fetch_today_schedule() -> str:
                         continue
                     hn = g["teams"]["home"]["team"]["name"]
                     an = g["teams"]["away"]["team"]["name"]
+                    # 팀명 한국어
+                    TEAM_KR = {
+                        "New York Yankees":"뉴욕 양키스","Boston Red Sox":"보스턴 레드삭스",
+                        "Los Angeles Dodgers":"LA 다저스","Houston Astros":"휴스턴 애스트로스",
+                        "Atlanta Braves":"애틀랜타 브레이브스","New York Mets":"뉴욕 메츠",
+                        "Philadelphia Phillies":"필라델피아 필리스","Toronto Blue Jays":"토론토 블루제이스",
+                        "Baltimore Orioles":"볼티모어 오리올스","Tampa Bay Rays":"탬파베이 레이스",
+                        "Chicago White Sox":"시카고 화이트삭스","Chicago Cubs":"시카고 컵스",
+                        "Cleveland Guardians":"클리블랜드 가디언스","Detroit Tigers":"디트로이트 타이거스",
+                        "Kansas City Royals":"캔자스시티 로열스","Minnesota Twins":"미네소타 트윈스",
+                        "Milwaukee Brewers":"밀워키 브루어스","St. Louis Cardinals":"세인트루이스 카디널스",
+                        "Cincinnati Reds":"신시내티 레즈","Pittsburgh Pirates":"피츠버그 파이리츠",
+                        "Colorado Rockies":"콜로라도 로키스","Arizona Diamondbacks":"애리조나 다이아몬드백스",
+                        "Los Angeles Angels":"LA 에인절스","Oakland Athletics":"오클랜드 애슬레틱스",
+                        "Seattle Mariners":"시애틀 매리너스","Texas Rangers":"텍사스 레인저스",
+                        "San Diego Padres":"샌디에이고 파드리스","Miami Marlins":"마이애미 말린스",
+                        "Washington Nationals":"워싱턴 내셔널스",
+                        "San Francisco Giants":"샌프란시스코 자이언츠",
+                    }
+                    hn_kr = TEAM_KR.get(hn, hn)
+                    an_kr = TEAM_KR.get(an, an)
+                    # 선발투수
+                    h_sp = g["teams"]["home"].get("probablePitcher",{}).get("fullName","미정")
+                    a_sp = g["teams"]["away"].get("probablePitcher",{}).get("fullName","미정")
+                    # 시간
                     try:
                         utc = datetime.fromisoformat(g["gameDate"].replace("Z","+00:00"))
                         kst = utc.astimezone(KST)
                         t   = kst.strftime("%H:%M")
                     except:
                         t = "-"
-                    games.append(f"{t} {an[:6]} @ {hn[:6]}")
+                    games.append(f"  {t} {an_kr} @ {hn_kr} (선발: {a_sp} vs {h_sp})")
             if games:
-                lines.append(f"⚾ MLB ({len(games)}경기): {' / '.join(games[:4])}" +
-                             (f" 외 {len(games)-4}경기" if len(games)>4 else ""))
-    except:
-        pass
+                sections.append(f"⚾ MLB ({len(games)}경기)")
+                sections.extend(games)
+    except Exception as e:
+        print(f"  MLB 일정 실패: {e}")
 
-    # ── NPB ───────────────────────────────────────────
+    # ── NPB ──────────────────────────────────────────
     try:
         r = requests.get(
             "https://npb.jp/announcement/starter/",
-            headers={"User-Agent":"Mozilla/5.0","Referer":"https://npb.jp/"},
-            timeout=8
+            headers={"User-Agent":"Mozilla/5.0","Referer":"https://npb.jp/",
+                     "Accept-Language":"ja-JP,ja;q=0.9"},
+            timeout=10
         )
         if r.status_code == 200:
-            from bs4 import BeautifulSoup
+            from bs4 import BeautifulSoup as BS
             import re
-            soup = BeautifulSoup(r.content.decode("utf-8","ignore"), "html.parser")
+            soup = BS(r.content.decode("utf-8","ignore"), "html.parser")
             mmdd = now.strftime("%m%d")
             pat  = re.compile(rf"/scores/\d{{4}}/{mmdd}/(\w+)-(\w+)-\d+/")
             URL_KR = {
@@ -388,21 +368,32 @@ def fetch_today_schedule() -> str:
                 "b":"오릭스","e":"라쿠텐","l":"세이부","m":"롯데",
             }
             seen = set(); npb_games = []
-            for a in soup.find_all("a", href=True):
-                m = pat.search(a["href"])
+            # 선발 파싱
+            starters = {}
+            for a_tag in soup.find_all("a", href=True):
+                m = re.search(r"/bis/players/(\d+)\.html", a_tag["href"])
+                if m:
+                    pid = m.group(1)
+                    if pid not in starters:
+                        starters[pid] = ""
+
+            for a_tag in soup.find_all("a", href=True):
+                m = pat.search(a_tag["href"])
                 if not m: continue
                 key = m.group(1)+m.group(2)
                 if key in seen: continue
                 seen.add(key)
                 h = URL_KR.get(m.group(1),"")
                 a_ = URL_KR.get(m.group(2),"")
-                if h and a_: npb_games.append(f"{a_}@{h}")
+                if h and a_:
+                    npb_games.append(f"  {a_} @ {h}")
             if npb_games:
-                lines.append(f"🇯🇵 NPB ({len(npb_games)}경기): {' / '.join(npb_games)}")
-    except:
-        pass
+                sections.append(f"🇯🇵 NPB ({len(npb_games)}경기)")
+                sections.extend(npb_games)
+    except Exception as e:
+        print(f"  NPB 일정 실패: {e}")
 
-    # ── KBO ───────────────────────────────────────────
+    # ── KBO ──────────────────────────────────────────
     try:
         r = requests.post(
             "https://www.koreabaseball.com/ws/Main.asmx/GetKboGameList",
@@ -413,15 +404,77 @@ def fetch_today_schedule() -> str:
             timeout=8
         )
         if r.status_code == 200:
-            games = r.json().get("game", r.json().get("games",[]))
-            if games:
-                lines.append(f"🇰🇷 KBO ({len(games)}경기)")
-    except:
-        pass
+            js = r.json()
+            games = js.get("game", js.get("games", []))
+            KBO_TEAM = {
+                "OB":"두산","LG":"LG","KT":"KT","SK":"SSG",
+                "NC":"NC","HT":"KIA","LT":"롯데","SS":"삼성",
+                "HH":"한화","WO":"키움",
+            }
+            kbo_lines = []
+            for g in games:
+                ht = g.get("htNm","") or KBO_TEAM.get(g.get("ht",""),"")
+                vt = g.get("vtNm","") or KBO_TEAM.get(g.get("vt",""),"")
+                tm = g.get("gtime","") or g.get("gameTime","")
+                if ht and vt:
+                    kbo_lines.append(f"  {vt} @ {ht}" + (f" {tm[:5]}" if tm else ""))
+            if kbo_lines:
+                sections.append(f"🇰🇷 KBO ({len(kbo_lines)}경기)")
+                sections.extend(kbo_lines)
+    except Exception as e:
+        print(f"  KBO 일정 실패: {e}")
 
-    if not lines:
+    # ── 축구 5대 리그 + 월드컵 ───────────────────────
+    FOOTBALL_API_KEY = os.environ.get("FOOTBALL_API_KEY","")
+    if FOOTBALL_API_KEY:
+        leagues = [
+            ("PL",  "🏴󠁧󠁢󠁥󠁮󠁧󠁿 프리미어리그"),
+            ("PD",  "🇪🇸 라리가"),
+            ("SA",  "🇮🇹 세리에A"),
+            ("BL1", "🇩🇪 분데스리가"),
+            ("FL1", "🇫🇷 리그1"),
+            ("WC",  "🌍 FIFA 월드컵"),
+        ]
+        kst_from = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        kst_to   = kst_from + timedelta(hours=48)
+
+        for code_l, name in leagues:
+            try:
+                r = requests.get(
+                    "https://api.football-data.org/v4/matches",
+                    params={"competitions": code_l,
+                            "dateFrom": today_str, "dateTo": tomorrow_str},
+                    headers={"X-Auth-Token": FOOTBALL_API_KEY},
+                    timeout=8
+                )
+                if r.status_code != 200:
+                    continue
+                matches = []
+                for m in r.json().get("matches",[]):
+                    if m.get("status") in ("FINISHED","CANCELLED","POSTPONED"):
+                        continue
+                    try:
+                        utc = datetime.fromisoformat(m["utcDate"].replace("Z","+00:00"))
+                        kst = utc.astimezone(KST)
+                        if not (kst_from <= kst < kst_to):
+                            continue
+                        ht = m["homeTeam"].get("shortName") or m["homeTeam"]["name"]
+                        at = m["awayTeam"].get("shortName") or m["awayTeam"]["name"]
+                        matches.append(f"  {kst.strftime('%H:%M')} {at} vs {ht}")
+                    except:
+                        pass
+                if matches:
+                    sections.append(f"{name} ({len(matches)}경기)")
+                    sections.extend(matches)
+                import time as _time
+                _time.sleep(6)  # rate limit
+            except:
+                pass
+
+    if not sections:
         return "  경기 일정 수집 실패"
-    return "\n".join(lines)
+    return "\n".join(sections)
+
 
 def call_claude(prompt: str) -> str:
     r = requests.post(
