@@ -290,6 +290,9 @@ def fetch_today_schedule() -> str:
     """오늘 주요 스포츠 경기 일정 수집 — 세부 정보 포함"""
     KST = timezone(timedelta(hours=9))
     now = datetime.now(KST)
+    # 수집 범위: 오전 9시 발송 기준 → 오늘 09:00 ~ 내일 09:00 KST
+    range_start = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    range_end   = range_start + timedelta(hours=24)
     today_str    = now.strftime("%Y-%m-%d")
     tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
     sections = []
@@ -339,6 +342,9 @@ def fetch_today_schedule() -> str:
                         utc = datetime.fromisoformat(g["gameDate"].replace("Z","+00:00"))
                         kst = utc.astimezone(KST)
                         t   = kst.strftime("%H:%M")
+                        # 오늘 09:00 ~ 내일 09:00 범위만 포함
+                        if not (range_start <= kst < range_end):
+                            continue
                     except:
                         t = "-"
                     games.append(f"  {t} {an_kr} @ {hn_kr} (선발: {a_sp} vs {h_sp})")
@@ -433,10 +439,13 @@ def fetch_today_schedule() -> str:
             ("SA",  "🇮🇹 세리에A"),
             ("BL1", "🇩🇪 분데스리가"),
             ("FL1", "🇫🇷 리그1"),
-            ("WC",  "🌍 FIFA 월드컵"),
         ]
-        kst_from = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        kst_to   = kst_from + timedelta(hours=48)
+        # 월드컵 기간(6/11~7/19)만 추가
+        from datetime import datetime as dt
+        if dt(2026,6,11,tzinfo=KST) <= now <= dt(2026,7,20,tzinfo=KST):
+            leagues.append(("WC", "🌍 FIFA 월드컵"))
+        kst_from = range_start  # 오늘 09:00 KST
+        kst_to   = range_end    # 내일 09:00 KST
 
         for code_l, name in leagues:
             try:
